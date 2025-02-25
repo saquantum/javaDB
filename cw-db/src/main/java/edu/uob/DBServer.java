@@ -16,6 +16,7 @@ public class DBServer {
 
     private static final char END_OF_TRANSMISSION = 4;
     private String storageFolderPath;
+    private Controller controller;
 
     public static void main(String args[]) throws IOException {
         DBServer server = new DBServer();
@@ -32,6 +33,8 @@ public class DBServer {
             Files.createDirectories(Paths.get(storageFolderPath));
         } catch(IOException ioe) {
             System.out.println("Can't seem to create database storage folder " + storageFolderPath);
+        }finally {
+            controller = new Controller(storageFolderPath);
         }
     }
 
@@ -43,7 +46,7 @@ public class DBServer {
     */
     public String handleCommand(String command) {
         // TODO implement your server logic here
-        return "";
+        return this.controller.handleCommand(command);
     }
 
     //  === Methods below handle networking aspects of the project - you will not need to change these ! ===
