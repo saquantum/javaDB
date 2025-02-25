@@ -1,19 +1,20 @@
 package edu.uob;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.*;
 
 public class Controller {
 
-    private String currentDatabase = null;
-    private String currentTable = null;
-    private String storageFolderPath;
+    private File currentDatabase = null;
+    private File currentTable = null;
+    private File storageFolderPath;
 
     private enum Keywords {
         USE, CREATE, DROP, ALTER, INSERT, SELECT, UPDATE, DELETE, JOIN
     }
 
-    private static Map<String, Keywords> typeKeywords = new HashMap();
+    private static Map<String, Keywords> typeKeywords = new HashMap<>();
     private static Set<Character> validChars = new HashSet<>();
 
     static {
@@ -30,11 +31,16 @@ public class Controller {
     }
 
     public Controller(String storageFolderPath) {
-        this.storageFolderPath = storageFolderPath;
+        this.storageFolderPath = new File(storageFolderPath);
     }
 
     public String handleCommand(String command) {
-        String[] segments = Controller.lexTokens(command);
+        String[] segments;
+        try {
+            segments = Controller.lexTokens(command);
+        } catch (MySQLException e) {
+            return "[ERROR]: " + e.getMessage();
+        }
         if (!Controller.isValidCommand(segments)) {
             return "[ERROR]: invalid command.";
         }
@@ -49,6 +55,8 @@ public class Controller {
                 out = this.handleUseCommand(segments);
             } else if (key == Keywords.CREATE) {
                 out = this.handleCreateCommand(segments);
+            } else if (key == Keywords.DROP) {
+                out = this.handleDropCommand(segments);
             } else {
                 out = "[ERROR]: invalid command.";
             }
@@ -56,6 +64,42 @@ public class Controller {
             out = "[ERROR]: " + e.getMessage();
         }
         return out;
+    }
+
+    private String handleDropCommand(String[] segments) {
+        if (segments.length != 3) {
+            throw new MySQLException.InvalidQueryException("invalid usage of DROP command.");
+        }
+
+        if ("DATABASE".equalsIgnoreCase(segments[1])) {
+            File db = new File(this.storageFolderPath, segments[2].toLowerCase());
+            if (!db.exists()) {
+                throw new MySQLException("The database you would like to drop does not exist!");
+            } else {
+                if (db.delete()) {
+                    return "[OK]";
+                } else {
+                    throw new MySQLException("Failed to drop the database!");
+                }
+            }
+
+        } else if ("TABLE".equalsIgnoreCase(segments[1])) {
+            if (currentDatabase == null) {
+                throw new MySQLException("You have not selected a database yet!");
+            }
+            File table = new File(this.currentDatabase, segments[2].toLowerCase() + ".tab");
+            if (!table.exists()) {
+                throw new MySQLException("The table you would like to drop does not exist!");
+            } else {
+                if (table.delete()) {
+                    return "[OK]";
+                } else {
+                    throw new MySQLException("Failed to drop the table!");
+                }
+            }
+        } else {
+            throw new MySQLException.InvalidQueryException("invalid usage of DROP command.");
+        }
     }
 
     private String handleCreateCommand(String[] segments) {
@@ -77,7 +121,7 @@ public class Controller {
         if (segments.length != 3) {
             throw new MySQLException.InvalidQueryException("invalid usage of CREATE command.");
         }
-        File db = new File(new File(this.storageFolderPath), segments[2].toLowerCase());
+        File db = new File(this.storageFolderPath, segments[2].toLowerCase().toLowerCase());
         if (db.exists()) {
             throw new MySQLException("This database already exists, failed to create!");
         } else {
@@ -90,19 +134,37 @@ public class Controller {
     }
 
     private String handleCreateTable(String[] segments) {
+        if (currentDatabase == null) {
+            throw new MySQLException("You have not selected a database yet!");
+        }
 
-        return "[OK]";
+        File table = new File(this.currentDatabase, segments[2].toLowerCase() + ".tab");
+        if (table.exists()) {
+            throw new MySQLException("This table already exists, failed to create!");
+        } else {
+            try {
+                if (table.createNewFile()) {
+                    return "[OK]";
+                } else {
+                    throw new MySQLException("Failed to create table.");
+                }
+            } catch (IOException e) {
+                throw new MySQLException.InvalidQueryException("Failed to create table.");
+            }
+        }
     }
 
     private String handleUseCommand(String[] segments) {
         if (segments.length != 2) {
             throw new MySQLException.InvalidQueryException("invalid usage of USE command.");
         }
-        File root = new File(this.storageFolderPath);
-        File[] files = root.listFiles();
+        File[] files = this.storageFolderPath.listFiles();
+        if (files == null) {
+            throw new MySQLException("Storage Folder Path does not exist!");
+        }
         for (File file : files) {
-            if (file.isDirectory() && file.getName().equals(segments[1])) {
-                this.currentDatabase = file.getName();
+            if (file.isDirectory() && file.getName().equalsIgnoreCase(segments[1])) {
+                this.currentDatabase = new File(file.getAbsolutePath());
                 return "[OK]";
             }
         }
@@ -116,7 +178,7 @@ public class Controller {
     public static String[] lexTokens(String command) {
         List<String> segments = new LinkedList<>();
         command = command.trim();
-        while (command.length() > 0) {
+        while (!command.isEmpty()) {
             String[] tmp;
             if (command.charAt(0) == '\'') {
                 tmp = Controller.handleStringLiteral(command);
