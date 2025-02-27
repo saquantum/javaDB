@@ -1,9 +1,7 @@
 package edu.uob;
 
 import java.io.*;
-import java.nio.file.Paths;
 import java.util.*;
-import java.util.stream.Collectors;
 
 public class Controller {
 
@@ -129,7 +127,7 @@ public class Controller {
         }
         int where = 3;
         ConditionParser cp = new ConditionParser(table, Arrays.copyOfRange(segments, where + 1, segments.length));
-        table.deleteSelectedRow(cp);
+        table.updateSelectedRows(null, cp);
         return "[OK]";
     }
 
@@ -137,10 +135,7 @@ public class Controller {
         if (segments.length < 7) {
             throw new MySQLException.InvalidQueryException("Invalid usage of UPDATE command.");
         }
-
-        if (currentDatabase == null) {
-            throw new MySQLException("You have not selected a database yet!");
-        }
+        checkCurrentDatabase();
 
         if (!"SET".equalsIgnoreCase(segments[2])) {
             throw new MySQLException.InvalidQueryException("Missing SET keyword.");
@@ -189,6 +184,11 @@ public class Controller {
     }
 
     private String handleSelectCommand(String[] segments) throws MySQLException {
+        if (segments.length < 4) {
+            throw new MySQLException.InvalidQueryException("Invalid usage of SELECT command.");
+        }
+        checkCurrentDatabase();
+
         // find the selected attributes and the table.
         List<String> attributes = new ArrayList<>();
         Table table;
@@ -230,7 +230,7 @@ public class Controller {
             where = index + 2;
         }
 
-        List<Integer> indices = table.getSelectedAttributes(attributes);
+        List<Integer> indices = table.getSelectedAttributeIndices(attributes);
         ConditionParser cp = null;
         if (where < segments.length) {
             if (!"WHERE".equalsIgnoreCase(segments[where])) {
@@ -245,10 +245,7 @@ public class Controller {
         if (segments.length < 6) {
             throw new MySQLException.InvalidQueryException("Invalid usage of INSERT command.");
         }
-
-        if (currentDatabase == null) {
-            throw new MySQLException("You have not selected a database yet!");
-        }
+        checkCurrentDatabase();
 
         if (!"INTO".equalsIgnoreCase(segments[1])) {
             throw new MySQLException.InvalidQueryException("Missing INTO keyword.");
@@ -272,10 +269,7 @@ public class Controller {
         if (segments.length != 5) {
             throw new MySQLException.InvalidQueryException("Invalid usage of ALTER command.");
         }
-
-        if (currentDatabase == null) {
-            throw new MySQLException("You have not selected a database yet!");
-        }
+        checkCurrentDatabase();
 
         if (!"TABLE".equalsIgnoreCase(segments[1])) {
             throw new MySQLException.InvalidQueryException("Missing TABLE keyword.");
@@ -291,17 +285,15 @@ public class Controller {
         }
 
         if ("ADD".equalsIgnoreCase(segments[3])) {
-            table.addNewColumn(segments[4]);
+            table.updateColumn(segments[4], Table.Action.ADD);
             return "[OK]";
         }
         if ("DROP".equalsIgnoreCase(segments[3])) {
-            table.dropColumn(segments[4]);
+            table.updateColumn(segments[4], Table.Action.DROP);
             return "[OK]";
         }
-
         throw new MySQLException("The attribute you would like to ALTER does not exist!");
     }
-
 
     private String handleDropCommand(String[] segments) throws MySQLException {
         if (segments.length != 3) {
@@ -309,33 +301,42 @@ public class Controller {
         }
 
         if ("DATABASE".equalsIgnoreCase(segments[1])) {
-            File db = new File(this.storageFolderPath, segments[2].toLowerCase());
-            if (!db.exists()) {
-                throw new MySQLException("The database you would like to DROP does not exist!");
-            } else {
-                if (db.delete()) {
-                    return "[OK]";
-                } else {
-                    throw new MySQLException("Failed to DROP the database!");
-                }
-            }
-
+            return handleDropDatabase(segments);
         } else if ("TABLE".equalsIgnoreCase(segments[1])) {
-            if (currentDatabase == null) {
-                throw new MySQLException("You have not selected a database yet!");
-            }
-            File table = this.currentDatabase.getTableFile(segments[2].toLowerCase() + ".tab");
-            if (table == null) {
-                throw new MySQLException("The table you would like to DROP does not exist!");
-            } else {
-                if (table.delete()) {
-                    return "[OK]";
-                } else {
-                    throw new MySQLException("Failed to DROP the table!");
-                }
-            }
+            return handleDropTable(segments);
         } else {
             throw new MySQLException.InvalidQueryException("Invalid usage of DROP command.");
+        }
+    }
+
+    private String handleDropDatabase(String[] segments) throws MySQLException {
+        File db = new File(this.storageFolderPath, segments[2].toLowerCase());
+        if (!db.exists()) {
+            throw new MySQLException("The database you would like to DROP does not exist!");
+        } else {
+            if (db.delete()) {
+                return "[OK]";
+            } else {
+                throw new MySQLException("Failed to DROP the database!");
+            }
+        }
+    }
+
+    private String handleDropTable(String[] segments) throws MySQLException {
+        checkCurrentDatabase();
+
+        File table = this.currentDatabase.getTableFile(segments[2].toLowerCase() + ".tab");
+        if (table == null) {
+            throw new MySQLException("The table you would like to DROP does not exist!");
+        } else {
+            if (table.delete()) {
+                File tableID = new File(table.getParentFile(), segments[2].toLowerCase() + ".id");
+                if (tableID.exists()) tableID.delete();
+                this.currentDatabase.removeTable(segments[2].toLowerCase());
+                return "[OK]";
+            } else {
+                throw new MySQLException("Failed to DROP the table!");
+            }
         }
     }
 
@@ -371,9 +372,7 @@ public class Controller {
     }
 
     private String handleCreateTable(String[] segments) throws MySQLException {
-        if (currentDatabase == null) {
-            throw new MySQLException("You have not selected a database yet!");
-        }
+        checkCurrentDatabase();
 
         File table = this.currentDatabase.getTableFile(segments[2].toLowerCase());
         if (table != null) {
@@ -391,23 +390,7 @@ public class Controller {
 
     // input segments is of the format (VALUE1, VALUE2, ...)
     private List<String> handleParameterList(String[] segments, char mode) throws MySQLException {
-        String type;
-        if (mode == 'v') {
-            type = "value";
-        } else if (mode == 'a') {
-            type = "attribute";
-        } else {
-            throw new MySQLException("Interior Error: unknown type of parameter list!");
-        }
-
-        // check beginning and concluding parenthesis.
-        if (!"(".equals(segments[0])) {
-            throw new MySQLException.InvalidQueryException("Missing left parenthesis for the " + type + " list!");
-        }
-        if (!")".equals(segments[segments.length - 1])) {
-            throw new MySQLException.InvalidQueryException("Missing right parenthesis for the " + type + " list!");
-        }
-
+        String type = getParameterListType(segments, mode);
         ArrayList<String> parameters = new ArrayList<>();
 
         // the loop begins at 1 and ends at len - 1 to skip parenthesis
@@ -428,6 +411,26 @@ public class Controller {
             }
         }
         return parameters;
+    }
+
+    private static String getParameterListType(String[] segments, char mode) {
+        String type;
+        if (mode == 'v') {
+            type = "value";
+        } else if (mode == 'a') {
+            type = "attribute";
+        } else {
+            throw new MySQLException("Interior Error: unknown type of parameter list!");
+        }
+
+        // check beginning and concluding parenthesis.
+        if (!"(".equals(segments[0])) {
+            throw new MySQLException.InvalidQueryException("Missing left parenthesis for the " + type + " list!");
+        }
+        if (!")".equals(segments[segments.length - 1])) {
+            throw new MySQLException.InvalidQueryException("Missing right parenthesis for the " + type + " list!");
+        }
+        return type;
     }
 
     private String handleUseCommand(String[] segments) throws MySQLException {
@@ -452,7 +455,7 @@ public class Controller {
             return false;
         }
         for (int i = 1; i < str.length() - 1; i++) {
-            if (!Character.isLetterOrDigit(str.charAt(i)) || !Lexer.isValidSymbol(str.charAt(i)) || str.charAt(i) != ' ') {
+            if (!Character.isLetterOrDigit(str.charAt(i)) && !Lexer.isValidSymbol(str.charAt(i)) && str.charAt(i) != ' ') {
                 return false;
             }
         }
@@ -464,12 +467,12 @@ public class Controller {
             Double.parseDouble(str);
             return true;
         } catch (NumberFormatException e) {
-            return "TRUE".equals(str) || "FALSE".equals(str) || "NULL".equals(str) || Controller.isValidStringLiteral(str);
+            return "TRUE".equalsIgnoreCase(str) || "FALSE".equalsIgnoreCase(str) || "NULL".equalsIgnoreCase(str) || Controller.isValidStringLiteral(str);
         }
     }
 
     public static boolean isPlainText(String str) {
-        if (str.length() == 0) {
+        if (str.isEmpty()) {
             return false;
         }
         for (int i = 0; i < str.length(); i++) {
@@ -482,5 +485,11 @@ public class Controller {
 
     public static boolean isValidCommand(String[] segments) {
         return Controller.typeKeywords.containsKey(segments[0].toUpperCase());
+    }
+
+    private void checkCurrentDatabase() throws MySQLException {
+        if (this.currentDatabase == null) {
+            throw new MySQLException("You have not selected a database yet!");
+        }
     }
 }

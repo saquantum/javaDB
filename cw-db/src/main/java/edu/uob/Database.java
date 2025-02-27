@@ -38,6 +38,15 @@ public class Database {
         return this.tables;
     }
 
+    public void removeTable(String tableName) {
+        for (Table table : this.tables) {
+            if(table.getNameWithoutExtension().equals(tableName)) {
+                this.tables.remove(table);
+                break;
+            }
+        }
+    }
+
     public boolean hasTable(String name) {
         for (Table table : this.tables) {
             if (table.getTableFile().getName().equalsIgnoreCase(name)) {
