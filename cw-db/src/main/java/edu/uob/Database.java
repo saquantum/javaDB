@@ -40,7 +40,7 @@ public class Database {
 
     public void removeTable(String tableName) {
         for (Table table : this.tables) {
-            if(table.getNameWithoutExtension().equals(tableName)) {
+            if (table.getNameWithoutExtension().equalsIgnoreCase(tableName)) {
                 this.tables.remove(table);
                 break;
             }
@@ -106,9 +106,7 @@ public class Database {
             throw new MySQLException.MyIOException("Failed to create table file.");
         } finally {
             try {
-                if (bw != null) {
-                    bw.close();
-                }
+                if (bw != null) bw.close();
             } catch (IOException e) {
                 e.printStackTrace();
             }

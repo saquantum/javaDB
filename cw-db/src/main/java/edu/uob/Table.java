@@ -117,13 +117,11 @@ public class Table {
     }
 
     private String getUniqueID() throws IOException {
-        File id = new File(this.table.getParentFile(), this.table.getName().replaceAll("\\.tab", ".id"));
+        File id = new File(this.table.getParentFile(), getNameWithoutExtension() + ".id");
 
         // if ID file does not exist, create one.
-        if (!id.exists()) {
-            if (!id.createNewFile()) {
-                throw new IOException("Failed to create ID file.");
-            }
+        if (!id.exists() && !id.createNewFile()) {
+            throw new IOException("Failed to create ID file.");
         }
 
         // read the first line of the ID file, if it is not a number, read the table to update the ID file.
@@ -147,6 +145,7 @@ public class Table {
         return String.valueOf(maxID);
     }
 
+    // load selected table contents: columns according to indices, rows according to cp.
     public void loadTableContents(List<Integer> indices, ConditionParser cp) throws MySQLException {
         this.selectedTableContents = new LinkedList<>();
         BufferedReader br = null;
@@ -181,11 +180,11 @@ public class Table {
         return this.selectedTableContents;
     }
 
-    public enum Action {ADD, DROP}
+    public enum ColumnAction {ADD, DROP}
 
-    public void updateColumn(String name, Action action) throws MySQLException {
-        String actionType = action == Action.ADD ? "add new" : "drop";
-        if (action == Action.DROP && "id".equalsIgnoreCase(name)) {
+    public void updateColumn(String name, ColumnAction action) throws MySQLException {
+        String actionType = action == ColumnAction.ADD ? "add new" : "drop";
+        if (action == ColumnAction.DROP && "id".equalsIgnoreCase(name)) {
             throw new MySQLException.InvalidQueryException("You cannot manually drop ID attribute!");
         }
 
@@ -193,49 +192,24 @@ public class Table {
         BufferedReader br = null;
         BufferedWriter bw = null;
         try {
-
-            if (action == Action.ADD && getAttributeIndex(name) != -1) {
+            if (action == ColumnAction.ADD && getAttributeIndex(name) != -1) {
                 throw new MySQLException.InvalidQueryException("You cannot add duplicate attribute!");
             }
 
             br = new BufferedReader(new FileReader(this.table));
             bw = new BufferedWriter(new FileWriter(tmpFile));
-
-            if (action == Action.DROP) {
-                // if the attribute to drop does not exist or the file is empty, throw exception.
-                int index = getAttributeIndex(name);
-                int countAttributes = getCountAttributes();
-                if (index == -1 || countAttributes == -1) {
-                    throw new MySQLException.NoSuchAttributeException("The attribute you would like to drop does not exist.");
-                }
-                // transfer old file into a tmp file.
-                String line;
-                while ((line = br.readLine()) != null) {
-                    String[] tmp = line.split("\t");
-                    if (tmp.length != countAttributes) {
-                        throw new MySQLException.FileCrackedException();
-                    }
-                    List<String> list = new LinkedList<>(List.of(tmp));
-                    list.remove(index);
-                    bw.write(String.join("\t", list));
-                    bw.newLine();
-                }
+            if (action == ColumnAction.DROP) {
+                addColumn(name, br, bw);
             } else {
-                // transfer old file into a tmp file.
-                String line = br.readLine();
-                bw.write(line + "\t" + name + System.lineSeparator());
-                while ((line = br.readLine()) != null) {
-                    bw.write(line + "\tNULL");
-                    bw.newLine();
-                }
+                dropColumn(name, br, bw);
             }
-
             bw.flush();
             bw.close();
             br.close();
 
             // delete old file, rename tmp file.
-            this.table = getNewTableFile("Failed to delete the original table file during " + actionType + " column.", tmpFile, " during dropping column.");
+            this.table = getNewTableFile("Failed to delete the original table file during " + actionType + " attribute.",
+                    tmpFile, " during " + actionType + " attribute.");
 
         } catch (IOException e) {
             throw new MySQLException.MyIOException("IOException: Failed to " + actionType + " attribute.");
@@ -249,6 +223,37 @@ public class Table {
         }
     }
 
+    private void addColumn(String name, BufferedReader br, BufferedWriter bw) throws IOException {
+        // if the attribute to drop does not exist or the file is empty, throw exception.
+        int index = getAttributeIndex(name);
+        int countAttributes = getCountAttributes();
+        if (index == -1 || countAttributes == -1) {
+            throw new MySQLException.NoSuchAttributeException("The attribute you would like to drop does not exist.");
+        }
+        // transfer old file into a tmp file.
+        String line;
+        while ((line = br.readLine()) != null) {
+            String[] tmp = line.split("\t");
+            if (tmp.length != countAttributes) {
+                throw new MySQLException.FileCrackedException();
+            }
+            List<String> list = new LinkedList<>(List.of(tmp));
+            list.remove(index);
+            bw.write(String.join("\t", list));
+            bw.newLine();
+        }
+    }
+
+    private void dropColumn(String name, BufferedReader br, BufferedWriter bw) throws IOException {
+        // transfer old file into a tmp file.
+        String line = br.readLine();
+        bw.write(line + "\t" + name + System.lineSeparator());
+        while ((line = br.readLine()) != null) {
+            bw.write(line + "\tNULL");
+            bw.newLine();
+        }
+    }
+
     public void appendRow(List<String> values) throws MySQLException {
         // checks if the number of input values match the number of attributes.
         if (values.size() != getCountAttributes() - 1) {
@@ -258,7 +263,7 @@ public class Table {
         BufferedWriter bw = null;
         try {
             bw = new BufferedWriter(new FileWriter(this.table, true));
-            bw.write(getUniqueID() + "\t" + Table.removeStringQuotes(String.join("\t", values)));
+            bw.write(getUniqueID() + "\t" + Utility.removeStringQuotes(String.join("\t", values)));
             bw.newLine();
             bw.flush();
         } catch (IOException e) {
@@ -280,22 +285,11 @@ public class Table {
         StringBuffer sb = new StringBuffer();
         sb.append("[OK]").append(System.lineSeparator());
 
-        // headers
-        List<String> headers = getAllAttributesList();
-        for (Integer index : indices) {
-            sb.append(headers.get(index)).append(" ");
-        }
-        sb.append(System.lineSeparator());
+        List<List<String>> contents = new ArrayList<>();
+        contents.add(getAllAttributesList());
+        contents.addAll(this.selectedTableContents);
 
-        // contents
-        for (List<String> row : this.selectedTableContents) {
-            for (Integer index : indices) {
-                sb.append(row.get(index)).append(" ");
-            }
-            sb.append(System.lineSeparator());
-        }
-
-        return sb.toString();
+        return Utility.formatMatrix(contents);
     }
 
     // if NameValueMap == null, this will delete rows.
@@ -352,48 +346,42 @@ public class Table {
             throw new MySQLException.InvalidQueryException("The attributes you would like to match do not exist!");
         }
 
-        StringBuffer sb = new StringBuffer();
-        sb.append("[OK]").append(System.lineSeparator());
+        List<List<String>> jointTable = new ArrayList<>();
 
-        // joined headers
-        sb.append("id").append(" ");
+        // insert formatted headers
+        List<String> headers = new LinkedList<>();
+        headers.add("id");
         List<String> headers1 = table1.getAllAttributesList();
         for (int i = 0; i < headers1.size(); i++) {
             if (i == 0 || i == index1) continue;
-            sb.append(table1.getNameWithoutExtension())
-                    .append(".").append(headers1.get(i)).append(" ");
+            headers.add(table1.getNameWithoutExtension() + "." + headers1.get(i));
         }
-
         List<String> headers2 = table2.getAllAttributesList();
         for (int i = 0; i < headers2.size(); i++) {
             if (i == 0 || i == index2) continue;
-            sb.append(table2.getNameWithoutExtension())
-                    .append(".").append(headers2.get(i)).append(" ");
+            headers.add(table2.getNameWithoutExtension() + "." + headers2.get(i));
         }
-        sb.append(System.lineSeparator());
+        jointTable.add(headers);
 
-        // load table contents into memory
-        List<String> wildcard = new LinkedList<>();
-        wildcard.add("*");
-        table1.loadTableContents(table1.getSelectedAttributeIndices(wildcard), null);
-        table2.loadTableContents(table2.getSelectedAttributeIndices(wildcard), null);
-
+        // load and get all table contents
+        table1.loadTableContents(table1.getSelectedAttributeIndices(List.of("*")), null);
+        table2.loadTableContents(table2.getSelectedAttributeIndices(List.of("*")), null);
         List<List<String>> contents1 = table1.getTableContents();
         List<List<String>> contents2 = table2.getTableContents();
 
         // key: the values of the column to be matched from table1, value: the corresponding row
-        Map<String, List<String>> contentsMap = contents1.stream().collect(Collectors.toMap(s -> s.get(index1), s -> s));
+        Map<String, List<String>> contents1Map = contents1.stream().collect(Collectors.toMap(s -> s.get(index1), s -> s));
 
         // use another hash map, so we can sort the result to match table1's order.
         Map<Integer, List<String>> unsortedResult = new HashMap<>();
 
         // now loop through contents2 to match
         for (List<String> row : contents2) {
-            if (contentsMap.containsKey(row.get(index2))) {
+            if (contents1Map.containsKey(row.get(index2))) {
                 List<String> newRow = new LinkedList<>();
 
                 // values from table1
-                List<String> values1 = contentsMap.get(row.get(index2));
+                List<String> values1 = contents1Map.get(row.get(index2));
                 for (int i = 0; i < values1.size(); i++) {
                     if (i == 0 || i == index1) continue;
                     newRow.add((values1.get(i)));
@@ -414,18 +402,15 @@ public class Table {
                 .map(entry -> entry.getValue())
                 .toList();
 
-        // loop through the sorted list to build the final string
+        // loop through the sorted list to generate id
         int id = 1;
         for (List<String> row : sortedResult) {
-            sb.append(id).append(" ");
-            for (String s : row) {
-                sb.append(s).append(" ");
-            }
-            sb.append(System.lineSeparator());
+            row.add(0, String.valueOf(id));
             id++;
         }
 
-        return sb.toString();
+        jointTable.addAll(sortedResult);
+        return Utility.formatMatrix(jointTable);
     }
 
     // replace current table with tmp table, and rename it
@@ -441,11 +426,5 @@ public class Table {
         return newTableFile;
     }
 
-    public static String removeStringQuotes(String str) throws MySQLException {
-        try {
-            return str.replaceAll("'", "");
-        } catch (NullPointerException e) {
-            throw new MySQLException.NullPointerException(e.getMessage());
-        }
-    }
+
 }

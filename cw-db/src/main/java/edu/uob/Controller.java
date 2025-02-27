@@ -31,47 +31,42 @@ public class Controller {
     }
 
     public String handleCommand(String command) {
-        String[] segments;
         try {
-            segments = Lexer.lexTokens(command);
-        } catch (MySQLException e) {
+            String[] segments = Lexer.lexTokens(command);
+
+            if (!Controller.isValidCommand(segments)) {
+                return "[ERROR]: Unknown type of command.";
+            }
+            if (!";".equals(segments[segments.length - 1])) {
+                return "[ERROR]: A SQL statement must end with a semicolon!";
+            }
+            segments = Arrays.copyOf(segments, segments.length - 1);
+            Keywords key = Controller.typeKeywords.get(segments[0].toUpperCase());
+
+            if (key == Keywords.USE) {
+                return this.handleUseCommand(segments);
+            } else if (key == Keywords.CREATE) {
+                return this.handleCreateCommand(segments);
+            } else if (key == Keywords.DROP) {
+                return this.handleDropCommand(segments);
+            } else if (key == Keywords.ALTER) {
+                return this.handleAlterCommand(segments);
+            } else if (key == Keywords.INSERT) {
+                return this.handleInsertCommand(segments);
+            } else if (key == Keywords.SELECT) {
+                return this.handleSelectCommand(segments);
+            } else if (key == Keywords.UPDATE) {
+                return this.handleUpdateCommand(segments);
+            } else if (key == Keywords.DELETE) {
+                return this.handleDeleteCommand(segments);
+            } else if (key == Keywords.JOIN) {
+                return this.handleJoinCommand(segments);
+            } else {
+                return "[ERROR]: Invalid type of command."; // this should never be reached however
+            }
+        } catch (Exception e) {
             return "[ERROR]: " + e.getMessage();
         }
-        if (!Controller.isValidCommand(segments)) {
-            return "[ERROR]: Unknown type of command.";
-        }
-        if (!";".equals(segments[segments.length - 1])) {
-            return "[ERROR]: A SQL statement must end with a semicolon!";
-        }
-        segments = Arrays.copyOf(segments, segments.length - 1);
-        Keywords key = Controller.typeKeywords.get(segments[0].toUpperCase());
-        String out;
-        try {
-            if (key == Keywords.USE) {
-                out = this.handleUseCommand(segments);
-            } else if (key == Keywords.CREATE) {
-                out = this.handleCreateCommand(segments);
-            } else if (key == Keywords.DROP) {
-                out = this.handleDropCommand(segments);
-            } else if (key == Keywords.ALTER) {
-                out = this.handleAlterCommand(segments);
-            } else if (key == Keywords.INSERT) {
-                out = this.handleInsertCommand(segments);
-            } else if (key == Keywords.SELECT) {
-                out = this.handleSelectCommand(segments);
-            } else if (key == Keywords.UPDATE) {
-                out = this.handleUpdateCommand(segments);
-            } else if (key == Keywords.DELETE) {
-                out = this.handleDeleteCommand(segments);
-            } else if (key == Keywords.JOIN) {
-                out = this.handleJoinCommand(segments);
-            } else {
-                out = "[ERROR]: Invalid type of command.";
-            }
-        } catch (MySQLException e) {
-            out = "[ERROR]: " + e.getMessage();
-        }
-        return out;
     }
 
     private String handleJoinCommand(String[] segments) throws MySQLException {
@@ -146,7 +141,11 @@ public class Controller {
             throw new MySQLException.InvalidQueryException("The table you would like to UPDATE does not exist!");
         }
 
-        Map<Integer, String> map = new HashMap<>();
+        return parseUpdateCommand(table, segments);
+    }
+
+    private String parseUpdateCommand(Table table, String[] segments) throws MySQLException {
+        Map<Integer, String> map = new HashMap<>(); // <Integer: index of attribute, String: new value>
 
         int index = 3;
         while (index < segments.length) {
@@ -189,47 +188,59 @@ public class Controller {
         }
         checkCurrentDatabase();
 
-        // find the selected attributes and the table.
-        List<String> attributes = new ArrayList<>();
-        Table table;
-        int where = -1;
-
         // 1. wildcard case.
         if ("*".equals(segments[1]) && "FROM".equalsIgnoreCase(segments[2])) {
-            attributes.add("*");
-            table = this.currentDatabase.getTable(segments[3].toLowerCase() + ".tab");
-            if (table == null) {
-                throw new MySQLException.InvalidQueryException("The table you would like to SELECT does not exist!");
-            }
-            where = 4;
+            return handleSelectWildcard(segments);
         }
         // 2. general case
         else {
-            int index = 1;
-            while (index < segments.length) {
-                // an attribute
-                if (!isPlainText(segments[index])) {
-                    throw new MySQLException.InvalidQueryException("Attribute " + segments[index] + " is not a valid attribute!");
-                }
-                attributes.add(segments[index].toLowerCase());
+            return handleSelectGeneral(segments);
+        }
+    }
+
+    private String handleSelectGeneral(String[] segments) throws MySQLException {
+        List<String> attributes = new ArrayList<>();
+
+        int index = 1;
+        while (index < segments.length) {
+            // an attribute
+            if (!isPlainText(segments[index])) {
+                throw new MySQLException.InvalidQueryException("Attribute " + segments[index] + " is not a valid attribute!");
+            }
+            attributes.add(segments[index].toLowerCase());
+            index++;
+            // followed by a comma or FROM
+            if (index < segments.length && ",".equals(segments[index])) {
                 index++;
-                // followed by a comma or FROM
-                if (index < segments.length && ",".equals(segments[index])) {
-                    index++;
-                } else if (index < segments.length && "FROM".equalsIgnoreCase(segments[index])) {
-                    break;
-                } else {
-                    throw new MySQLException.InvalidQueryException();
-                }
+            } else if (index < segments.length && "FROM".equalsIgnoreCase(segments[index])) {
+                break;
+            } else {
+                throw new MySQLException.InvalidQueryException();
             }
-            // index points to FROM
-            table = this.currentDatabase.getTable(segments[index + 1].toLowerCase() + ".tab");
-            if (table == null) {
-                throw new MySQLException.InvalidQueryException("The table you would like to SELECT does not exist!");
-            }
-            where = index + 2;
         }
 
+        // index points to FROM
+        Table table = this.currentDatabase.getTable(segments[index + 1].toLowerCase() + ".tab");
+        if (table == null) {
+            throw new MySQLException.InvalidQueryException("The table you would like to SELECT does not exist!");
+        }
+
+        return getSelectResult(table, attributes, segments, index + 2);
+    }
+
+    private String handleSelectWildcard(String[] segments) throws MySQLException {
+
+        List<String> attributes = List.of("*");
+
+        Table table = this.currentDatabase.getTable(segments[3].toLowerCase() + ".tab");
+        if (table == null) {
+            throw new MySQLException.InvalidQueryException("The table you would like to SELECT does not exist!");
+        }
+
+        return getSelectResult(table, attributes, segments, 4);
+    }
+
+    private String getSelectResult(Table table, List<String> attributes, String[] segments, int where) throws MySQLException {
         List<Integer> indices = table.getSelectedAttributeIndices(attributes);
         ConditionParser cp = null;
         if (where < segments.length) {
@@ -240,6 +251,7 @@ public class Controller {
         }
         return table.getSelectedRows(indices, cp);
     }
+
 
     private String handleInsertCommand(String[] segments) throws MySQLException {
         if (segments.length < 6) {
@@ -285,11 +297,11 @@ public class Controller {
         }
 
         if ("ADD".equalsIgnoreCase(segments[3])) {
-            table.updateColumn(segments[4], Table.Action.ADD);
+            table.updateColumn(segments[4], Table.ColumnAction.ADD);
             return "[OK]";
         }
         if ("DROP".equalsIgnoreCase(segments[3])) {
-            table.updateColumn(segments[4], Table.Action.DROP);
+            table.updateColumn(segments[4], Table.ColumnAction.DROP);
             return "[OK]";
         }
         throw new MySQLException("The attribute you would like to ALTER does not exist!");
@@ -413,7 +425,7 @@ public class Controller {
         return parameters;
     }
 
-    private static String getParameterListType(String[] segments, char mode) {
+    private static String getParameterListType(String[] segments, char mode) throws MySQLException {
         String type;
         if (mode == 'v') {
             type = "value";

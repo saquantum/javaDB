@@ -12,8 +12,7 @@ public class Condition {
     private Class valueType;
 
     class Pair {
-        private String a;
-        private String b;
+        private String a, b;
 
         Pair(String a, String b) {
             this.a = a;
@@ -25,11 +24,8 @@ public class Condition {
         }
 
         String other(String x) {
-            if (this.a.equals(x)) {
-                return this.b;
-            } else {
-                return this.a;
-            }
+            if (this.a.equals(x)) return this.b;
+            else return this.a;
         }
     }
 
@@ -39,66 +35,77 @@ public class Condition {
             throw new MySQLException.InvalidConditionException();
         }
         String comparator = list.get(1);
-        Pair pair = new Pair(Table.removeStringQuotes(list.get(0)), Table.removeStringQuotes(list.get(2)));
+        Pair pair = new Pair(Utility.removeStringQuotes(list.get(0)), Utility.removeStringQuotes(list.get(2)));
 
         // one is boolean literal, the other must be an attribute, and the comparator can only be "==" or "!=".
         if (isBooleanLiteral(pair.either()) || isBooleanLiteral(pair.other(pair.either()))) {
-            if (!"==".equals(comparator) && !"!=".equals(comparator)) {
-                throw new MySQLException.InvalidConditionException("Invalid comparator for a comparison between boolean values!");
-            }
-            this.comparator = comparator;
-
-            String bool = isBooleanLiteral(pair.either()) ? pair.either() : pair.other(pair.either());
-            String attribute = pair.other(bool);
-            assignAttribute(attribute);
-            this.value = bool;
-            this.valueType = Boolean.class;
+            booleanCondition(comparator, pair);
         }
 
         // one is number, the other must be an attribute, and the comparator cannot be "LIKE"
         else if (isNumberLiteral(pair.either()) || isNumberLiteral(pair.other(pair.either()))) {
-            if ("LIKE".equalsIgnoreCase(comparator)) {
-                throw new MySQLException.InvalidConditionException("Invalid comparator for a comparison between numbers!");
-            }
-
-            String number = isBooleanLiteral(pair.either()) ? pair.either() : pair.other(pair.either());
-            String attribute = pair.other(number);
-
-            // decide what comparator to receive.
-            if (attribute.equals(Table.removeStringQuotes(list.get(0)))) {
-                this.comparator = comparator;
-            } else {
-                if (">".equals(comparator)) {
-                    this.comparator = "<";
-                } else if ("<".equals(comparator)) {
-                    this.comparator = ">";
-                } else if ("<=".equals(comparator)) {
-                    this.comparator = ">=";
-                } else if (">=".equals(comparator)) {
-                    this.comparator = "<=";
-                }
-            }
-
-            assignAttribute(attribute);
-            this.value = number;
-            this.valueType = isIntegerLiteral(number) ? Integer.class : Double.class;
+            numericalCondition(comparator, pair, list);
         }
 
         // both are string, comparator can only be "==", "!=" and "LIKE".
         else {
-            if (!"==".equals(comparator) && !"!=".equals(comparator) && !"LIKE".equalsIgnoreCase(comparator)) {
-                throw new MySQLException.InvalidConditionException("Invalid comparator for a comparison between strings!");
-            }
-            this.comparator = comparator;
+            stringCondition(comparator, list);
+        }
+    }
 
-            // this case, the first string must be the attribute, or it will severely go wrong.
-            String value = Table.removeStringQuotes(list.get(2));
-            String attribute = Table.removeStringQuotes(list.get(0));
-            assignAttribute(attribute);
-            this.value = value;
-            this.valueType = String.class;
+    private void stringCondition(String comparator, List<String> list) throws MySQLException {
+        if (!"==".equals(comparator) && !"!=".equals(comparator) && !"LIKE".equalsIgnoreCase(comparator)) {
+            throw new MySQLException.InvalidConditionException("Invalid comparator for a comparison between strings!");
+        }
+        this.comparator = comparator;
+
+        // this case, the first string must be the attribute, or it will severely go wrong.
+        String value = Utility.removeStringQuotes(list.get(2));
+        String attribute = Utility.removeStringQuotes(list.get(0));
+        assignAttribute(attribute);
+        this.value = value;
+        this.valueType = String.class;
+    }
+
+    private void numericalCondition(String comparator, Pair pair, List<String> list) throws MySQLException {
+        if ("LIKE".equalsIgnoreCase(comparator)) {
+            throw new MySQLException.InvalidConditionException("Invalid comparator for a comparison between numbers!");
         }
 
+        String number = isBooleanLiteral(pair.either()) ? pair.either() : pair.other(pair.either());
+        String attribute = pair.other(number);
+
+        // decide what comparator to receive.
+        if (attribute.equals(Utility.removeStringQuotes(list.get(0)))) {
+            this.comparator = comparator;
+        } else {
+            if (">".equals(comparator)) {
+                this.comparator = "<";
+            } else if ("<".equals(comparator)) {
+                this.comparator = ">";
+            } else if ("<=".equals(comparator)) {
+                this.comparator = ">=";
+            } else if (">=".equals(comparator)) {
+                this.comparator = "<=";
+            }
+        }
+
+        assignAttribute(attribute);
+        this.value = number;
+        this.valueType = isIntegerLiteral(number) ? Integer.class : Double.class;
+    }
+
+    private void booleanCondition(String comparator, Pair pair) throws MySQLException {
+        if (!"==".equals(comparator) && !"!=".equals(comparator)) {
+            throw new MySQLException.InvalidConditionException("Invalid comparator for a comparison between boolean values!");
+        }
+        this.comparator = comparator;
+
+        String bool = isBooleanLiteral(pair.either()) ? pair.either() : pair.other(pair.either());
+        String attribute = pair.other(bool);
+        assignAttribute(attribute);
+        this.value = bool;
+        this.valueType = Boolean.class;
     }
 
     // checks if the attribute is valid and exists, then record its index.
@@ -142,55 +149,27 @@ public class Condition {
         String attributeValue;
         try {
             attributeValue = row[this.attributeIndex];
-        } catch (ArrayIndexOutOfBoundsException e) {
+        } catch (IndexOutOfBoundsException e) {
             throw new MySQLException.FileCrackedException("Index out of bound: A record from current table is cracked.");
         }
 
         if (this.valueType == Boolean.class) {
             if (!isBooleanLiteral(attributeValue)) {
-                throw new MySQLException.InvalidConditionException("The data you would like to query are not boolean values.");
+                //throw new MySQLException.InvalidConditionException("The data you would like to query are not boolean values.");
+                return false;
             }
-            return this.value.equals(attributeValue);
+            return this.value.equalsIgnoreCase(attributeValue);
         }
 
-        if (this.valueType == Integer.class) {
-            if (!isIntegerLiteral(attributeValue)) {
-                throw new MySQLException.InvalidConditionException("The data you would like to query are not integer numbers.");
+        try {
+            if (this.valueType == Integer.class) {
+                return compareInteger(attributeValue);
             }
-            int a = Integer.parseInt(attributeValue);
-            if ("==".equals(this.comparator)) {
-                return a == Integer.parseInt(this.value);
-            } else if (">".equals(this.comparator)) {
-                return a > Integer.parseInt(this.value);
-            } else if ("<".equals(this.comparator)) {
-                return a < Integer.parseInt(this.value);
-            } else if (">=".equals(this.comparator)) {
-                return a >= Integer.parseInt(this.value);
-            } else if ("<=".equals(this.comparator)) {
-                return a <= Integer.parseInt(this.value);
-            } else if ("!=".equals(this.comparator)) {
-                return a != Integer.parseInt(this.value);
+            if (this.valueType == Double.class) {
+                return compareDouble(attributeValue);
             }
-        }
-
-        if (this.valueType == Double.class) {
-            if (!isNumberLiteral(attributeValue)) {
-                throw new MySQLException.InvalidConditionException("The data you would like to query are not integer numbers.");
-            }
-            double a = Double.parseDouble(attributeValue);
-            if ("==".equals(this.comparator)) {
-                return a == Double.parseDouble(this.value);
-            } else if (">".equals(this.comparator)) {
-                return a > Double.parseDouble(this.value);
-            } else if ("<".equals(this.comparator)) {
-                return a < Double.parseDouble(this.value);
-            } else if (">=".equals(this.comparator)) {
-                return a >= Double.parseDouble(this.value);
-            } else if ("<=".equals(this.comparator)) {
-                return a <= Double.parseDouble(this.value);
-            } else if ("!=".equals(this.comparator)) {
-                return a != Double.parseDouble(this.value);
-            }
+        } catch (NumberFormatException e) {
+            return false;
         }
 
         if (this.valueType == String.class) {
@@ -204,11 +183,55 @@ public class Condition {
             }
         }
 
-        throw new MySQLException.InvalidConditionException();
+        //throw new MySQLException.InvalidConditionException();
+        return false;
+    }
+
+    private boolean compareInteger(String attributeValue){
+        if (!isIntegerLiteral(attributeValue)) {
+            //throw new MySQLException.InvalidConditionException("The data you would like to query are not integer numbers.");
+            return false;
+        }
+        int a = Integer.parseInt(attributeValue);
+        if ("==".equals(this.comparator)) {
+            return a == Integer.parseInt(this.value);
+        } else if (">".equals(this.comparator)) {
+            return a > Integer.parseInt(this.value);
+        } else if ("<".equals(this.comparator)) {
+            return a < Integer.parseInt(this.value);
+        } else if (">=".equals(this.comparator)) {
+            return a >= Integer.parseInt(this.value);
+        } else if ("<=".equals(this.comparator)) {
+            return a <= Integer.parseInt(this.value);
+        } else if ("!=".equals(this.comparator)) {
+            return a != Integer.parseInt(this.value);
+        }
+        return false;
+    }
+
+    private boolean compareDouble(String attributeValue){
+        if (!isNumberLiteral(attributeValue)) {
+            //throw new MySQLException.InvalidConditionException("The data you would like to query are not floating point numbers.");
+            return false;
+        }
+        double a = Double.parseDouble(attributeValue);
+        if ("==".equals(this.comparator)) {
+            return a == Double.parseDouble(this.value);
+        } else if (">".equals(this.comparator)) {
+            return a > Double.parseDouble(this.value);
+        } else if ("<".equals(this.comparator)) {
+            return a < Double.parseDouble(this.value);
+        } else if (">=".equals(this.comparator)) {
+            return a >= Double.parseDouble(this.value);
+        } else if ("<=".equals(this.comparator)) {
+            return a <= Double.parseDouble(this.value);
+        } else if ("!=".equals(this.comparator)) {
+            return a != Double.parseDouble(this.value);
+        }
+        return false;
     }
 
     public String toString() {
         return this.attributeName + this.comparator + this.value;
     }
-
 }
