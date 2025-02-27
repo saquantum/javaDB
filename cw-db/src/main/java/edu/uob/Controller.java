@@ -1,20 +1,20 @@
 package edu.uob;
 
 import java.io.*;
+import java.nio.file.Paths;
 import java.util.*;
 import java.util.stream.Collectors;
 
 public class Controller {
 
     private Database currentDatabase = null;
-    private File storageFolderPath;
+    private final File storageFolderPath;
 
     private enum Keywords {
         USE, CREATE, DROP, ALTER, INSERT, SELECT, UPDATE, DELETE, JOIN
     }
 
-    private static Map<String, Keywords> typeKeywords = new HashMap<>();
-    private static Set<Character> validChars = new HashSet<>();
+    private static final Map<String, Keywords> typeKeywords = new HashMap<>();
 
     static {
         Controller.typeKeywords.put("USE", Keywords.USE);
@@ -26,7 +26,6 @@ public class Controller {
         Controller.typeKeywords.put("UPDATE", Keywords.UPDATE);
         Controller.typeKeywords.put("DELETE", Keywords.DELETE);
         Controller.typeKeywords.put("JOIN", Keywords.JOIN);
-        Collections.addAll(Controller.validChars, '!', '#', '$', '%', '&', '(', ')', '*', '+', ',', '-', '.', '/', ':', ';', '>', '=', '<', '?', '@', '[', '\\', ']', '^', '_', '`', '{', '}', '~');
     }
 
     public Controller(String storageFolderPath) {
@@ -36,7 +35,7 @@ public class Controller {
     public String handleCommand(String command) {
         String[] segments;
         try {
-            segments = Controller.lexTokens(command);
+            segments = Lexer.lexTokens(command);
         } catch (MySQLException e) {
             return "[ERROR]: " + e.getMessage();
         }
@@ -78,19 +77,168 @@ public class Controller {
     }
 
     private String handleJoinCommand(String[] segments) throws MySQLException {
-        return "[ERROR]";
+        if (segments.length != 8) {
+            throw new MySQLException.InvalidQueryException("Invalid usage of JOIN command.");
+        }
+
+        if (currentDatabase == null) {
+            throw new MySQLException("You have not selected a database yet!");
+        }
+
+        if (!"AND".equalsIgnoreCase(segments[2])) {
+            throw new MySQLException.InvalidQueryException("Missing AND keyword.");
+        }
+
+        if (!"ON".equalsIgnoreCase(segments[4])) {
+            throw new MySQLException.InvalidQueryException("Missing ON keyword.");
+        }
+
+        if (!"AND".equalsIgnoreCase(segments[6])) {
+            throw new MySQLException.InvalidQueryException("Missing AND keyword.");
+        }
+
+        Table table1 = this.currentDatabase.getTable(segments[1].toLowerCase() + ".tab");
+        Table table2 = this.currentDatabase.getTable(segments[3].toLowerCase() + ".tab");
+        if (table1 == null || table2 == null) {
+            throw new MySQLException.InvalidQueryException("The tables you would like to JOIN do not exist!");
+        }
+
+        return Table.joinTables(table1, table2, segments);
     }
 
     private String handleDeleteCommand(String[] segments) throws MySQLException {
-        return "[ERROR]";
+        if (segments.length < 5) {
+            throw new MySQLException.InvalidQueryException("Invalid usage of DELETE command.");
+        }
+
+        if (currentDatabase == null) {
+            throw new MySQLException("You have not selected a database yet!");
+        }
+
+        if (!"FROM".equalsIgnoreCase(segments[1])) {
+            throw new MySQLException.InvalidQueryException("Missing FROM keyword.");
+        }
+
+        Table table = this.currentDatabase.getTable(segments[2].toLowerCase() + ".tab");
+        if (table == null) {
+            throw new MySQLException.InvalidQueryException("The table you would like to DELETE does not exist!");
+        }
+
+        if (!"WHERE".equalsIgnoreCase(segments[3])) {
+            throw new MySQLException.InvalidQueryException("Missing WHERE keyword.");
+        }
+        int where = 3;
+        ConditionParser cp = new ConditionParser(table, Arrays.copyOfRange(segments, where + 1, segments.length));
+        table.deleteSelectedRow(cp);
+        return "[OK]";
     }
 
     private String handleUpdateCommand(String[] segments) throws MySQLException {
-        return "[ERROR]";
+        if (segments.length < 7) {
+            throw new MySQLException.InvalidQueryException("Invalid usage of UPDATE command.");
+        }
+
+        if (currentDatabase == null) {
+            throw new MySQLException("You have not selected a database yet!");
+        }
+
+        if (!"SET".equalsIgnoreCase(segments[2])) {
+            throw new MySQLException.InvalidQueryException("Missing SET keyword.");
+        }
+
+        Table table = this.currentDatabase.getTable(segments[1].toLowerCase() + ".tab");
+        if (table == null) {
+            throw new MySQLException.InvalidQueryException("The table you would like to UPDATE does not exist!");
+        }
+
+        Map<Integer, String> map = new HashMap<>();
+
+        int index = 3;
+        while (index < segments.length) {
+            // an attribute
+            if (!Controller.isPlainText(segments[index])) {
+                throw new MySQLException.InvalidQueryException("Attribute " + segments[index] + " is not a valid attribute!");
+            }
+            int key = table.getAttributeIndex(segments[index]);
+            index++;
+            // followed by an equality
+            if (index >= segments.length || !"=".equals(segments[index])) {
+                throw new MySQLException.InvalidQueryException();
+            }
+            index++;
+            // followed by a value
+            if (index >= segments.length || !Controller.isValidValue(segments[index])) {
+                throw new MySQLException.InvalidQueryException();
+            }
+            map.put(key, segments[index]);
+            index++;
+            // followed by a WHERE
+            if (index < segments.length && "WHERE".equalsIgnoreCase(segments[index])) {
+                break;
+            }
+        }
+
+        // index points to WHERE
+        int where = index;
+        ConditionParser cp = null;
+        if (where < segments.length) {
+            cp = new ConditionParser(table, Arrays.copyOfRange(segments, where + 1, segments.length));
+        }
+        table.updateSelectedRows(map, cp);
+        return "[OK]";
     }
 
     private String handleSelectCommand(String[] segments) throws MySQLException {
-        return "[ERROR]";
+        // find the selected attributes and the table.
+        List<String> attributes = new ArrayList<>();
+        Table table;
+        int where = -1;
+
+        // 1. wildcard case.
+        if ("*".equals(segments[1]) && "FROM".equalsIgnoreCase(segments[2])) {
+            attributes.add("*");
+            table = this.currentDatabase.getTable(segments[3].toLowerCase() + ".tab");
+            if (table == null) {
+                throw new MySQLException.InvalidQueryException("The table you would like to SELECT does not exist!");
+            }
+            where = 4;
+        }
+        // 2. general case
+        else {
+            int index = 1;
+            while (index < segments.length) {
+                // an attribute
+                if (!isPlainText(segments[index])) {
+                    throw new MySQLException.InvalidQueryException("Attribute " + segments[index] + " is not a valid attribute!");
+                }
+                attributes.add(segments[index].toLowerCase());
+                index++;
+                // followed by a comma or FROM
+                if (index < segments.length && ",".equals(segments[index])) {
+                    index++;
+                } else if (index < segments.length && "FROM".equalsIgnoreCase(segments[index])) {
+                    break;
+                } else {
+                    throw new MySQLException.InvalidQueryException();
+                }
+            }
+            // index points to FROM
+            table = this.currentDatabase.getTable(segments[index + 1].toLowerCase() + ".tab");
+            if (table == null) {
+                throw new MySQLException.InvalidQueryException("The table you would like to SELECT does not exist!");
+            }
+            where = index + 2;
+        }
+
+        List<Integer> indices = table.getSelectedAttributes(attributes);
+        ConditionParser cp = null;
+        if (where < segments.length) {
+            if (!"WHERE".equalsIgnoreCase(segments[where])) {
+                throw new MySQLException.InvalidQueryException("Missing WHERE keyword!");
+            }
+            cp = new ConditionParser(table, Arrays.copyOfRange(segments, where + 1, segments.length));
+        }
+        return table.getSelectedRows(indices, cp);
     }
 
     private String handleInsertCommand(String[] segments) throws MySQLException {
@@ -107,50 +255,17 @@ public class Controller {
         }
 
         Table table = this.currentDatabase.getTable(segments[2].toLowerCase() + ".tab");
+        if (table == null) {
+            throw new MySQLException.InvalidQueryException("The table you would like to INSERT does not exist!");
+        }
 
         if (!"VALUES".equalsIgnoreCase(segments[3])) {
             throw new MySQLException.InvalidQueryException("Missing VALUES keyword.");
         }
 
-        return handleValueList(table, segments);
-    }
-
-    private String handleValueList(Table table, String[] segments) throws MySQLException {
-        if (!"(".equals(segments[4])) {
-            throw new MySQLException.InvalidQueryException("Missing left parenthesis for the value list!");
-        }
-        List<String> values = new ArrayList<>();
-        int index = 5;
-        while (index < segments.length) {
-            // a value
-            if (!isValidValue(segments[index])) {
-                throw new MySQLException.InvalidQueryException("Invalid value: " + segments[index]);
-            }
-            values.add(segments[index]);
-            // followed by a comma or right parenthesis
-            if (",".equals(segments[index + 1])) {
-                index += 2;
-            } else if (")".equals(segments[index + 1])) {
-                if (index + 1 == segments.length - 1) {
-                    table.appendRow(values);
-                    return "[OK]";
-                } else {
-                    throw new MySQLException.InvalidQueryException("Unknown command found after the value list!");
-                }
-            } else {
-                throw new MySQLException.InvalidQueryException("Missing comma in the value list!");
-            }
-        }
-        throw new MySQLException.InvalidQueryException("Missing right parenthesis for the value list!");
-    }
-
-    private boolean isValidValue(String str) {
-        try {
-            Double.parseDouble(str);
-            return true;
-        } catch (NumberFormatException e) {
-            return "TRUE".equals(str) || "FALSE".equals(str) || "NULL".equals(str) || (str.startsWith("'") && str.endsWith("'"));
-        }
+        List<String> values = this.handleParameterList(Arrays.copyOfRange(segments, 4, segments.length), 'v');
+        table.appendRow(values);
+        return "[OK]";
     }
 
     private String handleAlterCommand(String[] segments) throws MySQLException {
@@ -167,6 +282,9 @@ public class Controller {
         }
 
         Table table = this.currentDatabase.getTable(segments[2].toLowerCase() + ".tab");
+        if (table == null) {
+            throw new MySQLException.InvalidQueryException("The table you would like to ALTER does not exist!");
+        }
 
         if (!"ADD".equalsIgnoreCase(segments[3]) && !"DROP".equalsIgnoreCase(segments[3])) {
             throw new MySQLException.InvalidQueryException("Missing ADD or DROP keyword, or invalid type of alteration.");
@@ -181,7 +299,7 @@ public class Controller {
             return "[OK]";
         }
 
-        throw new MySQLException("The attribute you would like to alter does not exist!");
+        throw new MySQLException("The attribute you would like to ALTER does not exist!");
     }
 
 
@@ -193,12 +311,12 @@ public class Controller {
         if ("DATABASE".equalsIgnoreCase(segments[1])) {
             File db = new File(this.storageFolderPath, segments[2].toLowerCase());
             if (!db.exists()) {
-                throw new MySQLException("The database you would like to drop does not exist!");
+                throw new MySQLException("The database you would like to DROP does not exist!");
             } else {
                 if (db.delete()) {
                     return "[OK]";
                 } else {
-                    throw new MySQLException("Failed to drop the database!");
+                    throw new MySQLException("Failed to DROP the database!");
                 }
             }
 
@@ -207,13 +325,13 @@ public class Controller {
                 throw new MySQLException("You have not selected a database yet!");
             }
             File table = this.currentDatabase.getTableFile(segments[2].toLowerCase() + ".tab");
-            if (!table.exists()) {
-                throw new MySQLException("The table you would like to drop does not exist!");
+            if (table == null) {
+                throw new MySQLException("The table you would like to DROP does not exist!");
             } else {
                 if (table.delete()) {
                     return "[OK]";
                 } else {
-                    throw new MySQLException("Failed to drop the table!");
+                    throw new MySQLException("Failed to DROP the table!");
                 }
             }
         } else {
@@ -242,12 +360,12 @@ public class Controller {
         }
         File db = new File(this.storageFolderPath, segments[2].toLowerCase().toLowerCase());
         if (db.exists()) {
-            throw new MySQLException("This database already exists, failed to create!");
+            throw new MySQLException("This database already exists, failed to CREATE!");
         } else {
             if (db.mkdir()) {
                 return "[OK]";
             } else {
-                throw new MySQLException("Failed to create database.");
+                throw new MySQLException("Failed to CREATE database.");
             }
         }
     }
@@ -259,44 +377,57 @@ public class Controller {
 
         File table = this.currentDatabase.getTableFile(segments[2].toLowerCase());
         if (table != null) {
-            throw new MySQLException("This table already exists, failed to create!");
+            throw new MySQLException("This table already exists, failed to CREATE!");
         }
 
         if (segments.length == 3) {
             this.currentDatabase.createNewTable(segments[2].toLowerCase());
-            return "[OK]";
         } else {
-            return handleAttributeList(segments);
+            List<String> attributes = this.handleParameterList(Arrays.copyOfRange(segments, 3, segments.length), 'a');
+            this.currentDatabase.createNewTable(segments[2].toLowerCase(), attributes.toArray(String[]::new));
         }
+        return "[OK]";
     }
 
-    private String handleAttributeList(String[] segments) throws MySQLException {
-        if (!"(".equals(segments[3])) {
-            throw new MySQLException.InvalidQueryException("Missing left parenthesis for the attribute list!");
+    // input segments is of the format (VALUE1, VALUE2, ...)
+    private List<String> handleParameterList(String[] segments, char mode) throws MySQLException {
+        String type;
+        if (mode == 'v') {
+            type = "value";
+        } else if (mode == 'a') {
+            type = "attribute";
+        } else {
+            throw new MySQLException("Interior Error: unknown type of parameter list!");
         }
-        ArrayList<String> attributes = new ArrayList<>();
-        int index = 4;
-        while (index < segments.length) {
-            // a plain text
-            if (!isPlainText(segments[index])) {
-                throw new MySQLException.InvalidQueryException("Invalid attribute naming: " + segments[index]);
+
+        // check beginning and concluding parenthesis.
+        if (!"(".equals(segments[0])) {
+            throw new MySQLException.InvalidQueryException("Missing left parenthesis for the " + type + " list!");
+        }
+        if (!")".equals(segments[segments.length - 1])) {
+            throw new MySQLException.InvalidQueryException("Missing right parenthesis for the " + type + " list!");
+        }
+
+        ArrayList<String> parameters = new ArrayList<>();
+
+        // the loop begins at 1 and ends at len - 1 to skip parenthesis
+        int index = 1;
+        while (index < segments.length - 1) {
+            // a valid parameter
+            if ((mode == 'a' && !Controller.isPlainText(segments[index])) || (mode == 'v' && !Controller.isValidValue(segments[index]))) {
+                throw new MySQLException.InvalidQueryException("Invalid " + type + " naming: " + segments[index]);
             }
-            attributes.add(segments[index]);
-            // followed by a comma or right parenthesis
+            parameters.add(segments[index]);
+            // followed by a comma
             if (",".equals(segments[index + 1])) {
                 index += 2;
-            } else if (")".equals(segments[index + 1])) {
-                if (index + 1 == segments.length - 1) {
-                    this.currentDatabase.createNewTable(segments[2].toLowerCase(), attributes.toArray(String[]::new));
-                    return "[OK]";
-                } else {
-                    throw new MySQLException.InvalidQueryException("Unknown command found after the attribute list!");
-                }
+            } else if (index + 1 >= segments.length - 1) {
+                break;
             } else {
-                throw new MySQLException.InvalidQueryException("Missing comma in the attribute list!");
+                throw new MySQLException.InvalidQueryException("Missing comma in the " + type + " list!");
             }
         }
-        throw new MySQLException.InvalidQueryException("Missing right parenthesis for the attribute list!");
+        return parameters;
     }
 
     private String handleUseCommand(String[] segments) throws MySQLException {
@@ -316,7 +447,28 @@ public class Controller {
         throw new MySQLException("This database does not exist!");
     }
 
-    private boolean isPlainText(String str) {
+    private static boolean isValidStringLiteral(String str) {
+        if (!str.startsWith("'") || !str.endsWith("'")) {
+            return false;
+        }
+        for (int i = 1; i < str.length() - 1; i++) {
+            if (!Character.isLetterOrDigit(str.charAt(i)) || !Lexer.isValidSymbol(str.charAt(i)) || str.charAt(i) != ' ') {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean isValidValue(String str) {
+        try {
+            Double.parseDouble(str);
+            return true;
+        } catch (NumberFormatException e) {
+            return "TRUE".equals(str) || "FALSE".equals(str) || "NULL".equals(str) || Controller.isValidStringLiteral(str);
+        }
+    }
+
+    public static boolean isPlainText(String str) {
         if (str.length() == 0) {
             return false;
         }
@@ -331,121 +483,4 @@ public class Controller {
     public static boolean isValidCommand(String[] segments) {
         return Controller.typeKeywords.containsKey(segments[0].toUpperCase());
     }
-
-    public static String[] lexTokens(String command) throws MySQLException {
-        List<String> segments = new LinkedList<>();
-        command = command.trim();
-        while (!command.isEmpty()) {
-            String[] tmp;
-            if (command.charAt(0) == '\'') {
-                tmp = Controller.handleStringLiteral(command);
-            } else if (Character.isDigit(command.charAt(0))) {
-                tmp = Controller.handleNumberLiteral(command);
-                try {
-                    Double.parseDouble(tmp[0]);
-                } catch (NumberFormatException e) {
-                    throw new MySQLException.InvalidQueryException("Invalid number format.");
-                }
-            } else if (Character.isAlphabetic(command.charAt(0))) {
-                tmp = Controller.handleWholeWord(command);
-            } else if (Controller.isValidSymbol(command.charAt(0))) {
-                if (command.length() == 1) {
-                    tmp = new String[]{command};
-                } else {
-                    tmp = new String[2];
-                    tmp[0] = command.substring(0, 1);
-                    tmp[1] = command.substring(1);
-                }
-            } else {
-                throw new MySQLException.InvalidQueryException("Invalid character found.");
-            }
-            segments.add(tmp[0]);
-            if (tmp.length == 1) {
-                break;
-            } else {
-                command = tmp[1].trim();
-            }
-        }
-        combineNumberAndOperator(segments);
-        return segments.toArray(String[]::new);
-    }
-
-    // return 1~2 strings [word, ?restCommand]
-    private static String[] handleWholeWord(String command) {
-        command = command.trim();
-        int index = command.length();
-        for (int i = 0; i < command.length(); i++) {
-            if (!Character.isLetterOrDigit(command.charAt(i)) && command.charAt(i) != '_') {
-                index = i;
-                break;
-            }
-        }
-        if (index < command.length()) {
-            return new String[]{command.substring(0, index), command.substring(index)};
-        } else {
-            return new String[]{command};
-        }
-    }
-
-    // return 1~2 strings [stringLiteral, ?restCommand]
-    // command must start with a '
-    private static String[] handleStringLiteral(String command) throws MySQLException {
-        int index = command.length();
-        for (int i = 1; i < command.length(); i++) {
-            if (command.charAt(i) == '\'') {
-                index = i;
-                break;
-            }
-        }
-        if (index == command.length()) {
-            throw new MySQLException.InvalidQueryException("SQL command does not have a concluding ': " + command);
-        }
-        if (index < command.length() - 1) {
-            return new String[]{command.substring(0, index + 1), command.substring(index + 1)};
-        } else {
-            return new String[]{command};
-        }
-    }
-
-    private static String[] handleNumberLiteral(String command) {
-        command = command.trim();
-        int index = command.length();
-        for (int i = 0; i < command.length(); i++) {
-            if (!Character.isDigit(command.charAt(i)) && command.charAt(i) != '.') {
-                index = i;
-                break;
-            }
-        }
-        if (index < command.length()) {
-            return new String[]{command.substring(0, index), command.substring(index)};
-        } else {
-            return new String[]{command};
-        }
-    }
-
-    private static boolean isValidSymbol(char c) {
-        return Controller.validChars.contains(c);
-    }
-
-    private static void combineNumberAndOperator(List<String> segments) {
-        int i = 0;
-        while (i < segments.size()) {
-            if ("=".equals(segments.get(i)) || "<".equals(segments.get(i)) || ">".equals(segments.get(i)) || "!".equals(segments.get(i))) {
-                if (i + 1 < segments.size() && "=".equals(segments.get(i + 1))) {
-                    segments.add(i, segments.get(i) + segments.get(i + 1));
-                    segments.remove(i + 1);
-                    segments.remove(i + 1);
-                }
-            } else if ("-".equals(segments.get(i)) || "+".equals(segments.get(i))) {
-                if (Character.isDigit(segments.get(i + 1).charAt(0))) {
-                    segments.add(i, segments.get(i) + segments.get(i + 1));
-                    segments.remove(i + 1);
-                    segments.remove(i + 1);
-                }
-            }
-            i++;
-        }
-    }
-
-
 }

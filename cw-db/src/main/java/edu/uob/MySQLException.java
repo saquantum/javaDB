@@ -64,4 +64,20 @@ public class MySQLException extends RuntimeException {
             super(message);
         }
     }
+
+    public static class InvalidConditionException extends MySQLException{
+        public InvalidConditionException() {
+            super("The condition is invalid.");
+        }
+
+        public InvalidConditionException(String message) {
+            super(message);
+        }
+    }
+
+    public static class NullPointerException extends MySQLException{
+        public NullPointerException(String message) {
+            super(message);
+        }
+    }
 }

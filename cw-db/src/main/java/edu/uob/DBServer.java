@@ -18,7 +18,7 @@ public class DBServer {
     private String storageFolderPath;
     private Controller controller;
 
-    public static void main(String args[]) throws IOException {
+    public static void main(String[] args) throws IOException {
         DBServer server = new DBServer();
         server.blockingListenOn(8888);
     }
