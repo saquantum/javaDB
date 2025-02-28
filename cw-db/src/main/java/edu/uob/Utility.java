@@ -1,10 +1,30 @@
 package edu.uob;
 
+import java.io.File;
+import java.io.IOException;
 import java.util.List;
 
 public class Utility {
 
-    private Utility(){}
+    private Utility() {
+    }
+
+    public static boolean deleteRecursive(File dir) throws MySQLException {
+        if (dir == null || !dir.exists()) {
+            return true;
+        }
+
+        if (dir.isDirectory()) {
+            File[] files = dir.listFiles();
+            if (files == null) {
+                throw new MySQLException.MyIOException("Cannot list files in " + dir.getAbsolutePath());
+            }
+            for (File file : files) {
+                if (!deleteRecursive(file)) return false;
+            }
+        }
+        return dir.delete();
+    }
 
     public static String removeStringQuotes(String str) throws MySQLException {
         try {

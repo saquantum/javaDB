@@ -113,6 +113,7 @@ public class Table {
                 throw new MySQLException.FileCrackedException("The ID of the record of this table has been cracked.");
             }
         }
+        br.close();
         return maxID;
     }
 
@@ -148,10 +149,8 @@ public class Table {
     // load selected table contents: columns according to indices, rows according to cp.
     public void loadTableContents(List<Integer> indices, ConditionParser cp) throws MySQLException {
         this.selectedTableContents = new LinkedList<>();
-        BufferedReader br = null;
-        try {
-            br = new BufferedReader(new FileReader(this.table));
 
+        try (BufferedReader br = new BufferedReader(new FileReader(this.table))) {
             String line = br.readLine(); // skip headers
 
             // consider condition for data
@@ -167,12 +166,6 @@ public class Table {
 
         } catch (IOException e) {
             throw new MySQLException.MyIOException(e.getMessage());
-        } finally {
-            try {
-                if (br != null) br.close();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
         }
     }
 
@@ -189,15 +182,13 @@ public class Table {
         }
 
         File tmpFile = new File("tmp$" + this.table.getName());
-        BufferedReader br = null;
-        BufferedWriter bw = null;
-        try {
+
+        try (BufferedReader br = new BufferedReader(new FileReader(this.table));
+             BufferedWriter bw = new BufferedWriter(new FileWriter(tmpFile))) {
             if (action == ColumnAction.ADD && getAttributeIndex(name) != -1) {
                 throw new MySQLException.InvalidQueryException("You cannot add duplicate attribute!");
             }
 
-            br = new BufferedReader(new FileReader(this.table));
-            bw = new BufferedWriter(new FileWriter(tmpFile));
             if (action == ColumnAction.DROP) {
                 addColumn(name, br, bw);
             } else {
@@ -213,13 +204,6 @@ public class Table {
 
         } catch (IOException e) {
             throw new MySQLException.MyIOException("IOException: Failed to " + actionType + " attribute.");
-        } finally {
-            try {
-                if (br != null) br.close();
-                if (bw != null) bw.close();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
         }
     }
 
@@ -260,22 +244,12 @@ public class Table {
             throw new MySQLException.InvalidQueryException("The number of input values does not match the table.");
         }
 
-        BufferedWriter bw = null;
-        try {
-            bw = new BufferedWriter(new FileWriter(this.table, true));
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(this.table, true))) {
             bw.write(getUniqueID() + "\t" + Utility.removeStringQuotes(String.join("\t", values)));
             bw.newLine();
             bw.flush();
         } catch (IOException e) {
             throw new MySQLException.MyIOException(e.getMessage());
-        } finally {
-            try {
-                if (bw != null) {
-                    bw.close();
-                }
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
         }
     }
 
@@ -295,11 +269,8 @@ public class Table {
     // if NameValueMap == null, this will delete rows.
     public void updateSelectedRows(Map<Integer, String> NameValueMap, ConditionParser cp) throws MySQLException {
         File tmpFile = new File("tmp$" + this.table.getName());
-        BufferedReader br = null;
-        BufferedWriter bw = null;
-        try {
-            br = new BufferedReader(new FileReader(this.table));
-            bw = new BufferedWriter(new FileWriter(tmpFile));
+        try (BufferedReader br = new BufferedReader(new FileReader(this.table));
+             BufferedWriter bw = new BufferedWriter(new FileWriter(tmpFile))) {
             String line = br.readLine(); // skip the headers
             bw.write(line + System.lineSeparator()); // but remember to keep the headers
 
@@ -329,13 +300,6 @@ public class Table {
 
         } catch (IOException e) {
             throw new MySQLException.MyIOException(e.getMessage());
-        } finally {
-            try {
-                if (br != null) br.close();
-                if (bw != null) bw.close();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
         }
     }
 

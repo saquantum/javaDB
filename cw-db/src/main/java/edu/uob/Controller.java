@@ -30,6 +30,11 @@ public class Controller {
         this.storageFolderPath = new File(storageFolderPath);
     }
 
+    // for tests
+    public Database getCurrentDatabase() {
+        return this.currentDatabase;
+    }
+
     public String handleCommand(String command) {
         try {
             String[] segments = Lexer.lexTokens(command);
@@ -96,7 +101,7 @@ public class Controller {
             throw new MySQLException.InvalidQueryException("The tables you would like to JOIN do not exist!");
         }
 
-        return Table.joinTables(table1, table2, segments);
+        return "[OK]" + System.lineSeparator() + Table.joinTables(table1, table2, segments);
     }
 
     private String handleDeleteCommand(String[] segments) throws MySQLException {
@@ -164,7 +169,7 @@ public class Controller {
             if (index >= segments.length || !Controller.isValidValue(segments[index])) {
                 throw new MySQLException.InvalidQueryException();
             }
-            map.put(key, segments[index]);
+            map.put(key, Utility.removeStringQuotes(segments[index]));
             index++;
             // followed by a WHERE
             if (index < segments.length && "WHERE".equalsIgnoreCase(segments[index])) {
@@ -190,11 +195,11 @@ public class Controller {
 
         // 1. wildcard case.
         if ("*".equals(segments[1]) && "FROM".equalsIgnoreCase(segments[2])) {
-            return handleSelectWildcard(segments);
+            return "[OK]" + System.lineSeparator() + handleSelectWildcard(segments);
         }
         // 2. general case
         else {
-            return handleSelectGeneral(segments);
+            return "[OK]" + System.lineSeparator() + handleSelectGeneral(segments);
         }
     }
 
@@ -326,7 +331,10 @@ public class Controller {
         if (!db.exists()) {
             throw new MySQLException("The database you would like to DROP does not exist!");
         } else {
-            if (db.delete()) {
+            if (this.currentDatabase != null && this.currentDatabase.getDatabase().getName().equalsIgnoreCase(db.getName())) {
+                this.currentDatabase = null;
+            }
+            if (Utility.deleteRecursive(db)) {
                 return "[OK]";
             } else {
                 throw new MySQLException("Failed to DROP the database!");
@@ -413,13 +421,18 @@ public class Controller {
                 throw new MySQLException.InvalidQueryException("Invalid " + type + " naming: " + segments[index]);
             }
             parameters.add(segments[index]);
-            // followed by a comma
-            if (",".equals(segments[index + 1])) {
-                index += 2;
-            } else if (index + 1 >= segments.length - 1) {
+            index++;
+            if (")".equals(segments[index])) {
                 break;
-            } else {
+            }
+            // followed by a comma
+            if (!",".equals(segments[index])) {
                 throw new MySQLException.InvalidQueryException("Missing comma in the " + type + " list!");
+            }
+            index++;
+            // only valid parameter follows comma
+            if (index >= segments.length - 1 || (mode == 'a' && !Controller.isPlainText(segments[index])) || (mode == 'v' && !Controller.isValidValue(segments[index]))) {
+                throw new MySQLException.InvalidQueryException("Invalid " + type + " naming: " + segments[index]);
             }
         }
         return parameters;
