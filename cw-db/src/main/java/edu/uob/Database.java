@@ -78,8 +78,8 @@ public class Database {
         if (hasTable(table.getName())) {
             throw new MySQLException("This table already exists, failed to create!");
         }
-        BufferedWriter bw = null;
-        try {
+
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(table))) {
             // two rules:
             // 1. no duplicate attribute allowed
             Set<String> set = Arrays.stream(attributes).map(String::toLowerCase).collect(Collectors.toSet());
@@ -92,24 +92,16 @@ public class Database {
             }
 
             // write attributes into the file.
-            bw = new BufferedWriter(new FileWriter(table));
             bw.write("id");
             for (String attribute : attributes) {
                 bw.write('\t' + attribute);
             }
             bw.newLine();
-
             bw.flush();
             bw.close();
             this.tables.add(new Table(this.database, table.getName()));
         } catch (IOException e) {
             throw new MySQLException.MyIOException("Failed to create table file.");
-        } finally {
-            try {
-                if (bw != null) bw.close();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
         }
     }
 

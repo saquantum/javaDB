@@ -1,6 +1,7 @@
 package edu.uob;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 
@@ -43,6 +44,9 @@ public class ConditionParser {
             if (this.isCondition) {
                 return this.condition.toString();
             } else {
+                if(this.isRoot){
+                    return "root";
+                }
                 return this.type.toString();
             }
         }
@@ -64,7 +68,7 @@ public class ConditionParser {
         while ("OR".equalsIgnoreCase(peekNext())) {
             next();
             Node or = new Node(false, null, operatorType.OR);
-            // move the and expression parsed above into this or node
+            // move the AND expression parsed above into this or node
             or.children.add(parent.children.remove(parent.children.size() - 1));
             parent.children.add(or);
             parseAndExpression(or);
@@ -100,7 +104,17 @@ public class ConditionParser {
             condition.add(next());
             condition.add(next());
             condition.add(next());
+            for (String s : condition) {
+                if(s==null) throw new MySQLException.InvalidQueryException("Missing condition!");
+            }
+
             parent.children.add(new Node(true, new Condition(this.table, condition), operatorType.NULL));
+
+            // check if it has reached the end or next node is a connector
+            String peekNext = peekNext();
+            if(peekNext!=null && !"AND".equalsIgnoreCase(peekNext) && !"OR".equalsIgnoreCase(peekNext) && !")".equalsIgnoreCase(peekNext)){
+                throw new MySQLException.InvalidQueryException("Missing AND or OR operator to connect multiple conditions!");
+            }
         }
     }
 
