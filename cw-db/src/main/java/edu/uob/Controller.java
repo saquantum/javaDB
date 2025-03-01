@@ -30,11 +30,6 @@ public class Controller {
         this.storageFolderPath = new File(storageFolderPath);
     }
 
-    // for tests
-    public Database getCurrentDatabase() {
-        return this.currentDatabase;
-    }
-
     public String handleCommand(String command) {
         try {
             String[] segments = Lexer.lexTokens(command);
@@ -171,9 +166,11 @@ public class Controller {
             }
             map.put(key, Utility.removeStringQuotes(segments[index]));
             index++;
-            // followed by a WHERE
+            // followed by a WHERE or a comma
             if (index < segments.length && "WHERE".equalsIgnoreCase(segments[index])) {
                 break;
+            } else if(index < segments.length && ",".equalsIgnoreCase(segments[index]) ){
+                index++;
             }
         }
 

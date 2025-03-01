@@ -90,7 +90,7 @@ public class Condition {
 
         if ("LIKE".equalsIgnoreCase(this.comparator)) {
             String regex = this.value.replaceAll("%", ".*").replaceAll("_", ".");
-            return attributeValue.matches(regex);
+            return attributeValue.matches(".*" + regex + ".*");
         }
 
         return false;
