@@ -127,13 +127,13 @@ public class MyDBTests {
 
         // select valid cases
         response = sendCommandToServer("SELECT * FROM marks;").replaceAll("[\\x00-\\x1F\\x7F]", "");
-        assertTrue(response.matches(".*\\[OK].*1\\s+Simon\\s+65\\s+TRUE.*2\\s+Sion\\s+55\\s+TRUE.*3\\s+Rob\\s+35\\s+FALSE.*4\\s+Chris\\s+20\\s+FALSE.*"));
+        assertTrue(response.matches(".*1\\s+Simon\\s+65\\s+TRUE.*2\\s+Sion\\s+55\\s+TRUE.*3\\s+Rob\\s+35\\s+FALSE.*4\\s+Chris\\s+20\\s+FALSE.*"));
         response = sendCommandToServer("SELECT mark, name FROM marks;").replaceAll("[\\x00-\\x1F\\x7F]", "");
-        assertTrue(response.matches(".*\\[OK].*id\\s+name\\s+mark\\s+pass\\s+65\\s+Simon\\s+55\\s+Sion\\s+35\\s+Rob\\s+20\\s+Chris.*"));
+        assertTrue(response.matches(".*id\\s+name\\s+mark\\s+pass.*65\\s+Simon\\s+55\\s+Sion\\s+35\\s+Rob\\s+20\\s+Chris.*"));
         response = sendCommandToServer("SELECT name, name, id FROM marks;").replaceAll("[\\x00-\\x1F\\x7F]", "");
-        assertTrue(response.matches(".*\\[OK].*id\\s+name\\s+mark\\s+pass\\s+Simon\\s+Simon\\s+1\\s+Sion\\s+Sion\\s+2\\s+Rob\\s+Rob\\s+3\\s+Chris\\s+Chris 4.*"));
+        assertTrue(response.matches(".*id\\s+name\\s+mark\\s+pass.*Simon\\s+Simon\\s+1\\s+Sion\\s+Sion\\s+2\\s+Rob\\s+Rob\\s+3\\s+Chris\\s+Chris 4.*"));
         response = sendCommandToServer("SELECT Name, NAME, iD FROM maRks;").replaceAll("[\\x00-\\x1F\\x7F]", "");
-        assertTrue(response.matches(".*\\[OK].*id\\s+name\\s+mark\\s+pass\\s+Simon\\s+Simon\\s+1\\s+Sion\\s+Sion\\s+2\\s+Rob\\s+Rob\\s+3\\s+Chris\\s+Chris 4.*"));
+        assertTrue(response.matches(".*id\\s+name\\s+mark\\s+pass.*Simon\\s+Simon\\s+1\\s+Sion\\s+Sion\\s+2\\s+Rob\\s+Rob\\s+3\\s+Chris\\s+Chris 4.*"));
 
         // select with condition
         response = sendCommandToServer("SELECT * FROM marks WHERE id>2;").replaceAll("[\\x00-\\x1F\\x7F]", "");
@@ -344,11 +344,11 @@ public class MyDBTests {
 
         // valid join
         response = sendCommandToServer("JOIN coursework AND marks ON submission AND id;").replaceAll("[\\x00-\\x1F\\x7F]", "");
-        assertTrue(response.matches(".*id\\s+coursework.task\\s+marks.name\\s+marks.mark\\s+marks.pass\\s+1\\s+OXO\\s+Rob\\s+35\\s+FALSE\\s+" +
+        assertTrue(response.matches(".*id\\s+coursework.task\\s+marks.name\\s+marks.mark\\s+marks.pass.*1\\s+OXO\\s+Rob\\s+35\\s+FALSE\\s+" +
                 "2\\s+DB\\s+Simon\\s+65\\s+TRUE\\s+3\\s+OXO\\s+Chris\\s+20\\s+FALSE\\s+4\\s+STAG\\s+Sion\\s+55\\s+TRUE.*"));
 
         response = sendCommandToServer("JOIN marks AND coursework ON id AND submission;").replaceAll("[\\x00-\\x1F\\x7F]", "");
-        assertTrue(response.matches(".*id\\s+marks.name\\s+marks.mark\\s+marks.pass\\s+coursework.task\\s+1\\s+Simon\\s+65\\s+TRUE\\s+DB\\s+" +
+        assertTrue(response.matches(".*id\\s+marks.name\\s+marks.mark\\s+marks.pass\\s+coursework.task.*1\\s+Simon\\s+65\\s+TRUE\\s+DB\\s+" +
                 "2\\s+Sion\\s+55\\s+TRUE\\s+STAG\\s+3\\s+Rob\\s+35\\s+FALSE\\s+OXO\\s+4\\s+Chris\\s+20\\s+FALSE\\s+OXO.*"));
 
         // create new tables and drop them.

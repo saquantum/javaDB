@@ -313,52 +313,10 @@ public class Table {
         List<List<String>> jointTable = new ArrayList<>();
 
         // insert formatted headers
-        List<String> headers = new LinkedList<>();
-        headers.add("id");
-        List<String> headers1 = table1.getAllAttributesList();
-        for (int i = 0; i < headers1.size(); i++) {
-            if (i == 0 || i == index1) continue;
-            headers.add(table1.getNameWithoutExtension() + "." + headers1.get(i));
-        }
-        List<String> headers2 = table2.getAllAttributesList();
-        for (int i = 0; i < headers2.size(); i++) {
-            if (i == 0 || i == index2) continue;
-            headers.add(table2.getNameWithoutExtension() + "." + headers2.get(i));
-        }
-        jointTable.add(headers);
+        formatJointTableHeaders(table1, table2, index1, index2, jointTable);
 
-        // load and get all table contents
-        table1.loadTableContents(table1.getSelectedAttributeIndices(List.of("*")), null);
-        table2.loadTableContents(table2.getSelectedAttributeIndices(List.of("*")), null);
-        List<List<String>> contents1 = table1.getTableContents();
-        List<List<String>> contents2 = table2.getTableContents();
-
-        // key: the values of the column to be matched from table1, value: the corresponding row
-        Map<String, List<String>> contents1Map = contents1.stream().collect(Collectors.toMap(s -> s.get(index1), s -> s));
-
-        // use another hash map, so we can sort the result to match table1's order.
-        Map<Integer, List<String>> unsortedResult = new HashMap<>();
-
-        // now loop through contents2 to match
-        for (List<String> row : contents2) {
-            if (contents1Map.containsKey(row.get(index2))) {
-                List<String> newRow = new LinkedList<>();
-
-                // values from table1
-                List<String> values1 = contents1Map.get(row.get(index2));
-                for (int i = 0; i < values1.size(); i++) {
-                    if (i == 0 || i == index1) continue;
-                    newRow.add((values1.get(i)));
-                }
-
-                // values from table2
-                for (int i = 0; i < row.size(); i++) {
-                    if (i == 0 || i == index2) continue;
-                    newRow.add(row.get(i));
-                }
-                unsortedResult.put(contents1.indexOf(values1), newRow);
-            }
-        }
+        // get joint table contents
+        Map<Integer, List<String>> unsortedResult = jointTableContents(table1, table2, index1, index2);
 
         // convert map into sorted list
         List<List<String>> sortedResult = unsortedResult.entrySet().stream()
@@ -375,6 +333,66 @@ public class Table {
 
         jointTable.addAll(sortedResult);
         return Utility.formatMatrix(jointTable);
+    }
+
+    private static Map<Integer, List<String>> jointTableContents(Table table1, Table table2, int index1, int index2) throws MySQLException {
+        // load and get all table contents
+        table1.loadTableContents(table1.getSelectedAttributeIndices(List.of("*")), null);
+        table2.loadTableContents(table2.getSelectedAttributeIndices(List.of("*")), null);
+        List<List<String>> contents1 = table1.getTableContents();
+        List<List<String>> contents2 = table2.getTableContents();
+
+        // key: the values of the column to be matched from table1, value: the corresponding row
+        Map<String, List<String>> contents1Map = contents1.stream().collect(Collectors.toMap(s -> s.get(index1), s -> s));
+
+        if(contents1Map.size() != contents1.size()){
+            throw new MySQLException.FileCrackedException("The attribute you would like to match has duplicate values and cannot be used as a key!");
+        }
+
+        // use another hash map, so we can sort the result to match table1's order.
+        Map<Integer, List<String>> unsortedResult = new HashMap<>();
+
+        // now loop through contents2 to match
+        for (List<String> row : contents2) {
+            if (contents1Map.containsKey(row.get(index2))) {
+                // format the joint row
+                List<String> newRow = new LinkedList<>();
+
+                // values from table1
+                List<String> values1 = contents1Map.get(row.get(index2));
+                if(unsortedResult.containsKey(contents1.indexOf(values1))){
+                    throw new MySQLException.FileCrackedException("The attribute you would like to match has duplicate values and cannot be used as a key!");
+                }
+                for (int i = 0; i < values1.size(); i++) {
+                    if (i == 0 || i == index1) continue;
+                    newRow.add((values1.get(i)));
+                }
+
+                // values from table2
+                for (int i = 0; i < row.size(); i++) {
+                    if (i == 0 || i == index2) continue;
+                    newRow.add(row.get(i));
+                }
+                unsortedResult.put(contents1.indexOf(values1), newRow);
+            }
+        }
+        return unsortedResult;
+    }
+
+    private static void formatJointTableHeaders(Table table1, Table table2, int index1, int index2, List<List<String>> jointTable) {
+        List<String> headers = new LinkedList<>();
+        headers.add("id");
+        List<String> headers1 = table1.getAllAttributesList();
+        for (int i = 0; i < headers1.size(); i++) {
+            if (i == 0 || i == index1) continue;
+            headers.add(table1.getNameWithoutExtension() + "." + headers1.get(i));
+        }
+        List<String> headers2 = table2.getAllAttributesList();
+        for (int i = 0; i < headers2.size(); i++) {
+            if (i == 0 || i == index2) continue;
+            headers.add(table2.getNameWithoutExtension() + "." + headers2.get(i));
+        }
+        jointTable.add(headers);
     }
 
     // replace current table with tmp table, and rename it

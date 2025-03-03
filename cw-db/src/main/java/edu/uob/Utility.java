@@ -2,6 +2,7 @@ package edu.uob;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.List;
 
 public class Utility {
@@ -49,14 +50,20 @@ public class Utility {
             throw new MySQLException.FileCrackedException(e.getMessage());
         }
 
-        StringBuffer sb = new StringBuffer();
+        int totalLength = Arrays.stream(maxLength).sum() + maxLength.length - 1;
 
-        for (List<String> list : matrix) {
-            for (int i = 0; i < list.size(); i++) {
-                sb.append(list.get(i)).append(" ".repeat(maxLength[i] + 1 - list.get(i).length()));
+        StringBuffer sb = new StringBuffer();
+        for (int i = 0; i < matrix.size(); i++) {
+            if(i == 1) sb.append("-".repeat(totalLength)).append(System.lineSeparator());
+            List<String> row = matrix.get(i);
+            for (int j = 0; j < row.size(); j++) {
+                sb.append(row.get(j)).append(" ".repeat(maxLength[j] + 1 - row.get(j).length()));
             }
             sb.append(System.lineSeparator());
         }
+
+
+
 
         return sb.toString();
     }
