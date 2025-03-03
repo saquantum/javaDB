@@ -22,13 +22,6 @@ public class MyDBTests {
         server = new DBServer();
     }
 
-    // Random name generator - useful for testing "bare earth" queries (i.e. where tables don't previously exist)
-    private String generateRandomName() {
-        String randomName = "";
-        for (int i = 0; i < 10; i++) randomName += (char) (97 + (Math.random() * 25.0));
-        return randomName;
-    }
-
     private String sendCommandToServer(String command) {
         // Try to send a command to the server - this call will timeout if it takes too long (in case the server enters an infinite loop)
         return assertTimeoutPreemptively(Duration.ofMillis(5000), () -> {
@@ -53,6 +46,9 @@ public class MyDBTests {
         assertTrue(sendCommandToServer("USE DATABASE testBase;").contains("[ERROR]"));
         assertTrue(sendCommandToServer("USE base DATABASE;").contains("[ERROR]"));
 
+        // edge case: use database that named by keyword.
+        assertTrue(sendCommandToServer("USE database;").contains("[ERROR]"));
+
         // edge case: use database does not exist.
         assertTrue(sendCommandToServer("USE testBase;").contains("[ERROR]"));
 
@@ -65,6 +61,13 @@ public class MyDBTests {
         assertTrue(sendCommandToServer("  CREATE   DATABASE testBASE;").contains("[ERROR]"));
         assertTrue(sendCommandToServer("   CREATE DATABASE testbase  ;   ").contains("[ERROR]"));
         assertTrue(sendCommandToServer("CREATE DATABASE    TestBase;").contains("[ERROR]"));
+
+        // edge case: create table and database with reserved keywords.
+        assertTrue(sendCommandToServer("CREATE TABLE table;").contains("[ERROR]"));
+        assertTrue(sendCommandToServer("CREATE DATABASE database;").contains("[ERROR]"));
+        assertTrue(sendCommandToServer("CREATE TABLE join;").contains("[ERROR]"));
+        assertTrue(sendCommandToServer("CREATE TABLE on;").contains("[ERROR]"));
+        assertTrue(sendCommandToServer("CREATE TABLE select;").contains("[ERROR]"));
 
         // switch to testBase, create table
         assertTrue(sendCommandToServer("USE TESTBase;").contains("[OK]"));
@@ -106,6 +109,10 @@ public class MyDBTests {
         assertTrue(sendCommandToServer("INSERT INTO marks VALUES (, 'A', 1, TRUE);").contains("[ERROR]"));
         assertTrue(sendCommandToServer("INSERT INTO marks ('A', 1, TRUE);").contains("[ERROR]"));
         assertTrue(sendCommandToServer("INSERT marks VALUES ('A', 1, TRUE);").contains("[ERROR]"));
+
+        // edge case: the number of values to insert does not the number of attributes
+        assertTrue(sendCommandToServer("INSERT INTO marks VALUES (1, TRUE);").contains("[ERROR]"));
+        assertTrue(sendCommandToServer("INSERT INTO marks VALUES ('A', 1, TRUE, FALSE)").contains("[ERROR]"));
 
         // edge case: select attributes do not exist.
         assertTrue(sendCommandToServer("SELECT course from marks;").contains("[ERROR]"));
@@ -272,6 +279,12 @@ public class MyDBTests {
         assertTrue(sendCommandToServer("ALTER TABLE marks ADD NaMe;").contains("[ERROR]"));
         assertTrue(sendCommandToServer("ALTER database marks ADD abc;").contains("[ERROR]"));
         assertTrue(sendCommandToServer("ALTER marks ADD abc;").contains("[ERROR]"));
+
+        // edge case: add attribute named by reserved keywords
+        assertTrue(sendCommandToServer("ALTER TABLE marks ADD insert;").contains("[ERROR]"));
+        assertTrue(sendCommandToServer("ALTER TABLE marks ADD and;").contains("[ERROR]"));
+        assertTrue(sendCommandToServer("ALTER TABLE marks ADD into;").contains("[ERROR]"));
+        assertTrue(sendCommandToServer("ALTER TABLE marks ADD from;").contains("[ERROR]"));
 
         // alter table does not exist
         assertTrue(sendCommandToServer("ALTER TABLE table ADD abc;").contains("[ERROR]"));

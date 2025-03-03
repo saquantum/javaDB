@@ -12,18 +12,18 @@ public class Controller {
         USE, CREATE, DROP, ALTER, INSERT, SELECT, UPDATE, DELETE, JOIN
     }
 
-    private static final Map<String, Keywords> typeKeywords = new HashMap<>();
+    private static Map<String, Keywords> typeKeywords;
+
+    private static Set<String> allReservedKeywords;
 
     static {
-        Controller.typeKeywords.put("USE", Keywords.USE);
-        Controller.typeKeywords.put("CREATE", Keywords.CREATE);
-        Controller.typeKeywords.put("DROP", Keywords.DROP);
-        Controller.typeKeywords.put("ALTER", Keywords.ALTER);
-        Controller.typeKeywords.put("INSERT", Keywords.INSERT);
-        Controller.typeKeywords.put("SELECT", Keywords.SELECT);
-        Controller.typeKeywords.put("UPDATE", Keywords.UPDATE);
-        Controller.typeKeywords.put("DELETE", Keywords.DELETE);
-        Controller.typeKeywords.put("JOIN", Keywords.JOIN);
+        Controller.typeKeywords = Map.ofEntries(Map.entry("USE", Keywords.USE), Map.entry("CREATE", Keywords.CREATE),
+                Map.entry("DROP", Keywords.DROP), Map.entry("ALTER", Keywords.ALTER),Map.entry("INSERT", Keywords.INSERT),
+                Map.entry("SELECT", Keywords.SELECT), Map.entry("UPDATE", Keywords.UPDATE),Map.entry("DELETE", Keywords.DELETE),
+                Map.entry("JOIN", Keywords.JOIN));
+
+        Controller.allReservedKeywords = Set.of("USE", "CREATE", "DROP", "ALTER", "INSERT", "SELECT", "UPDATE", "DELETE",
+                "AND", "OR", "LIKE", "TABLE", "DATABASE", "INTO", "VALUES", "FROM", "SET", "WHERE", "ADD", "ON", "TRUE", "FALSE", "NULL");
     }
 
     public Controller(String storageFolderPath) {
@@ -169,7 +169,7 @@ public class Controller {
             // followed by a WHERE or a comma
             if (index < segments.length && "WHERE".equalsIgnoreCase(segments[index])) {
                 break;
-            } else if(index < segments.length && ",".equalsIgnoreCase(segments[index]) ){
+            } else if (index < segments.length && ",".equalsIgnoreCase(segments[index])) {
                 index++;
             }
         }
@@ -299,6 +299,9 @@ public class Controller {
         }
 
         if ("ADD".equalsIgnoreCase(segments[3])) {
+            if(!Controller.isPlainText(segments[4])){
+                throw new MySQLException.InvalidQueryException("The name of the attribute you would like to ADD must not be reserved keywords!");
+            }
             table.updateColumn(segments[4], Table.ColumnAction.ADD);
             return "[OK]";
         }
@@ -360,6 +363,9 @@ public class Controller {
     private String handleCreateCommand(String[] segments) throws MySQLException {
         if (segments.length < 3) {
             throw new MySQLException.InvalidQueryException("Invalid usage of CREATE command.");
+        }
+        if(!Controller.isPlainText(segments[2])) {
+            throw new MySQLException.InvalidQueryException("The name of database or table cannot be reserved keywords!");
         }
         String out;
         if ("DATABASE".equalsIgnoreCase(segments[1])) {
@@ -459,6 +465,9 @@ public class Controller {
         if (segments.length != 2) {
             throw new MySQLException.InvalidQueryException("Invalid usage of USE command.");
         }
+        if(!Controller.isPlainText(segments[1])) {
+            throw new MySQLException.InvalidQueryException("Database must not be reserved keywords!");
+        }
         File[] files = this.storageFolderPath.listFiles();
         if (files == null) {
             throw new MySQLException("Storage Folder Path does not exist!");
@@ -502,7 +511,7 @@ public class Controller {
                 return false;
             }
         }
-        return true;
+        return !Controller.allReservedKeywords.contains(str.toUpperCase());
     }
 
     public static boolean isValidCommand(String[] segments) {
