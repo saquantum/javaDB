@@ -260,10 +260,16 @@ public class Table {
         sb.append("[OK]").append(System.lineSeparator());
 
         List<List<String>> contents = new ArrayList<>();
-        contents.add(getAllAttributesList());
-        contents.addAll(this.selectedTableContents);
 
-        return Utility.formatMatrix(contents);
+        List<String> reference = getAllAttributesList();
+        List<String> selectedAttributes = new ArrayList<>();
+        for (Integer index : indices) {
+            selectedAttributes.add(reference.get(index));
+        }
+        contents.add(selectedAttributes);
+        contents.addAll(this.selectedTableContents);
+        sb.append(Utility.formatMatrix(contents));
+        return sb.toString();
     }
 
     // if NameValueMap == null, this will delete rows.

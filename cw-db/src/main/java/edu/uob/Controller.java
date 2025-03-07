@@ -192,11 +192,11 @@ public class Controller {
 
         // 1. wildcard case.
         if ("*".equals(segments[1]) && "FROM".equalsIgnoreCase(segments[2])) {
-            return "[OK]" + System.lineSeparator() + handleSelectWildcard(segments);
+            return handleSelectWildcard(segments);
         }
         // 2. general case
         else {
-            return "[OK]" + System.lineSeparator() + handleSelectGeneral(segments);
+            return handleSelectGeneral(segments);
         }
     }
 

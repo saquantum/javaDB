@@ -129,11 +129,11 @@ public class MyDBTests {
         response = sendCommandToServer("SELECT * FROM marks;").replaceAll("[\\x00-\\x1F\\x7F]", "");
         assertTrue(response.matches(".*1\\s+Simon\\s+65\\s+TRUE.*2\\s+Sion\\s+55\\s+TRUE.*3\\s+Rob\\s+35\\s+FALSE.*4\\s+Chris\\s+20\\s+FALSE.*"));
         response = sendCommandToServer("SELECT mark, name FROM marks;").replaceAll("[\\x00-\\x1F\\x7F]", "");
-        assertTrue(response.matches(".*id\\s+name\\s+mark\\s+pass.*65\\s+Simon\\s+55\\s+Sion\\s+35\\s+Rob\\s+20\\s+Chris.*"));
+        assertTrue(response.matches(".*mark\\s+name.*65\\s+Simon\\s+55\\s+Sion\\s+35\\s+Rob\\s+20\\s+Chris.*"));
         response = sendCommandToServer("SELECT name, name, id FROM marks;").replaceAll("[\\x00-\\x1F\\x7F]", "");
-        assertTrue(response.matches(".*id\\s+name\\s+mark\\s+pass.*Simon\\s+Simon\\s+1\\s+Sion\\s+Sion\\s+2\\s+Rob\\s+Rob\\s+3\\s+Chris\\s+Chris 4.*"));
+        assertTrue(response.matches(".*name\\s+name\\s+id.*Simon\\s+Simon\\s+1\\s+Sion\\s+Sion\\s+2\\s+Rob\\s+Rob\\s+3\\s+Chris\\s+Chris 4.*"));
         response = sendCommandToServer("SELECT Name, NAME, iD FROM maRks;").replaceAll("[\\x00-\\x1F\\x7F]", "");
-        assertTrue(response.matches(".*id\\s+name\\s+mark\\s+pass.*Simon\\s+Simon\\s+1\\s+Sion\\s+Sion\\s+2\\s+Rob\\s+Rob\\s+3\\s+Chris\\s+Chris 4.*"));
+        assertTrue(response.matches(".*name\\s+name\\s+id.*Simon\\s+Simon\\s+1\\s+Sion\\s+Sion\\s+2\\s+Rob\\s+Rob\\s+3\\s+Chris\\s+Chris 4.*"));
 
         // select with condition
         response = sendCommandToServer("SELECT * FROM marks WHERE id>2;").replaceAll("[\\x00-\\x1F\\x7F]", "");

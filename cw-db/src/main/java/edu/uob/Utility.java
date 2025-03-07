@@ -62,9 +62,6 @@ public class Utility {
             sb.append(System.lineSeparator());
         }
 
-
-
-
         return sb.toString();
     }
 }
